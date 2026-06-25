@@ -1,0 +1,20 @@
+# Secrets — never commit
+.env
+.env.local
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Generated files
+*.pdf
+/tmp/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
