@@ -1,4 +1,4 @@
-# FinOps AI
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://finops-ai-calebmugambi.streamlit.app)# FinOps AI
 
 **Finance operations automation platform for private companies — built on real AP/AR workflows.**
 
