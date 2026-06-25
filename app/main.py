@@ -61,20 +61,20 @@ with st.sidebar:
 
 # ---------- Module Router ----------
 if "Dashboard" in module:
-    from app.pages.dashboard import render_dashboard
+    from app.modules.dashboard import render_dashboard
     render_dashboard()
 elif "Invoice" in module:
-    from app.pages.invoice_page import render_invoice_page
+    from app.modules.invoice_page import render_invoice_page
     render_invoice_page()
 elif "AP Reconciliation" in module:
-    from app.pages.recon_page import render_recon_page
+    from app.modules.recon_page import render_recon_page
     render_recon_page()
 elif "WHT" in module:
-    from app.pages.wht_page import render_wht_page
+    from app.modules.wht_page import render_wht_page
     render_wht_page()
 elif "AR Receipting" in module:
-    from app.pages.ar_page import render_ar_page
+    from app.modules.ar_page import render_ar_page
     render_ar_page()
 elif "Vendor Master" in module:
-    from app.pages.vendor_page import render_vendor_page
+    from app.modules.vendor_page import render_vendor_page
     render_vendor_page()
