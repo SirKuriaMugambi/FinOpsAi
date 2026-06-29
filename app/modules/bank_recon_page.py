@@ -113,23 +113,49 @@ def render_bank_recon_page():
         use_sample_bank = st.checkbox("Use sample bank statement", value=True)
         if use_sample_bank:
             bank_df = SAMPLE_BANK_STATEMENT.copy()
+            st.dataframe(bank_df, use_container_width=True)
         else:
             bank_file = st.file_uploader(
                 "Upload bank statement (CSV/Excel)",
                 type=["csv", "xlsx", "xls"],
                 key="bank_upload",
-                help="Expected columns: Date, Description, Debit, Credit, Currency, Ref"
+                help="Expected columns: Date, Description, Ref, Debit (KES), Credit (KES), Balance (KES)"
             )
             bank_df = None
             if bank_file:
-                bank_df = pd.read_excel(bank_file) if bank_file.name.endswith(("xlsx","xls")) else pd.read_csv(bank_file)
+                try:
+                    if bank_file.name.endswith(("xlsx","xls")):
+                        # Try skiprows=2 first to skip title row
+                        temp_df = pd.read_excel(bank_file, header=0)
+                        # If first column looks like a title, skip it
+                        if "Credit" not in temp_df.columns and "Credit (KES)" not in temp_df.columns:
+                            bank_file.seek(0)
+                            temp_df = pd.read_excel(bank_file, skiprows=2, header=0)
+                        bank_df = temp_df
+                    else:
+                        bank_df = pd.read_csv(bank_file)
+                    # Normalize column names
+                    bank_df.columns = [str(c).strip() for c in bank_df.columns]
+                    # Handle "Debit (KES)" and "Credit (KES)" vs "Debit" and "Credit"
+                    if "Debit (KES)" in bank_df.columns:
+                        bank_df = bank_df.rename(columns={"Debit (KES)": "Debit", "Credit (KES)": "Credit"})
+                    # Fill NaN with 0 for numeric columns
+                    for col in ["Debit", "Credit"]:
+                        if col in bank_df.columns:
+                            bank_df[col] = pd.to_numeric(
+                                bank_df[col].astype(str).str.replace(",",""), errors="coerce"
+                            ).fillna(0)
+                    st.session_state["bank_df_stored"] = bank_df
+                except Exception as e:
+                    st.error(f"Error reading bank statement: {e}")
+            elif st.session_state.get("bank_df_stored") is not None:
+                bank_df = st.session_state["bank_df_stored"]
+
         if bank_df is not None:
             st.dataframe(bank_df, use_container_width=True)
-            total_credits = bank_df["Credit"].sum()
-            total_debits = bank_df["Debit"].sum()
-            st.metric("Total Credits", format_currency(total_credits))
-            st.metric("Total Debits", format_currency(total_debits))
-            st.metric("Net Movement", format_currency(total_credits - total_debits))
+            if "Credit" in bank_df.columns and "Debit" in bank_df.columns:
+                st.metric("Total Credits", format_currency(bank_df["Credit"].sum()))
+                st.metric("Total Debits", format_currency(bank_df["Debit"].sum()))
 
     with col2:
         st.subheader("AX Ledger Extract")
@@ -137,16 +163,39 @@ def render_bank_recon_page():
         use_sample_ax = st.checkbox("Use sample AX ledger", value=True)
         if use_sample_ax:
             ax_df = SAMPLE_AX_LEDGER.copy()
+            st.dataframe(ax_df, use_container_width=True)
         else:
             ax_file = st.file_uploader(
                 "Upload AX ledger extract (CSV/Excel)",
                 type=["csv", "xlsx", "xls"],
                 key="ax_upload",
-                help="Expected columns: Date, Description, Debit, Credit, Ref"
+                help="Expected columns: Date, Description, Ref, Debit (KES), Credit (KES)"
             )
             ax_df = None
             if ax_file:
-                ax_df = pd.read_excel(ax_file) if ax_file.name.endswith(("xlsx","xls")) else pd.read_csv(ax_file)
+                try:
+                    if ax_file.name.endswith(("xlsx","xls")):
+                        temp_df = pd.read_excel(ax_file, header=0)
+                        if "Credit" not in temp_df.columns and "Credit (KES)" not in temp_df.columns:
+                            ax_file.seek(0)
+                            temp_df = pd.read_excel(ax_file, skiprows=2, header=0)
+                        ax_df = temp_df
+                    else:
+                        ax_df = pd.read_csv(ax_file)
+                    ax_df.columns = [str(c).strip() for c in ax_df.columns]
+                    if "Debit (KES)" in ax_df.columns:
+                        ax_df = ax_df.rename(columns={"Debit (KES)": "Debit", "Credit (KES)": "Credit"})
+                    for col in ["Debit", "Credit"]:
+                        if col in ax_df.columns:
+                            ax_df[col] = pd.to_numeric(
+                                ax_df[col].astype(str).str.replace(",",""), errors="coerce"
+                            ).fillna(0)
+                    st.session_state["ax_df_stored"] = ax_df
+                except Exception as e:
+                    st.error(f"Error reading AX ledger: {e}")
+            elif st.session_state.get("ax_df_stored") is not None:
+                ax_df = st.session_state["ax_df_stored"]
+
         if ax_df is not None:
             st.dataframe(ax_df, use_container_width=True)
 
@@ -159,25 +208,45 @@ def render_bank_recon_page():
     )
     period = st.text_input("Period", value="June 2026")
 
-    if st.button("🔄 Run Bank Reconciliation", type="primary", use_container_width=True):
-        if bank_df is not None and ax_df is not None:
-            matched, unmatched_bank, unmatched_ax = match_transactions(bank_df, ax_df)
+    # Use whichever df is available — sample or uploaded
+    active_bank_df = bank_df if bank_df is not None else (SAMPLE_BANK_STATEMENT if use_sample_bank else None)
+    active_ax_df = ax_df if ax_df is not None else (SAMPLE_AX_LEDGER if use_sample_ax else None)
 
+    if st.button("🔄 Run Bank Reconciliation", type="primary", use_container_width=True):
+        if active_bank_df is not None and active_ax_df is not None:
+            # Ensure numeric columns exist
+            for df in [active_bank_df, active_ax_df]:
+                for col in ["Debit", "Credit"]:
+                    if col not in df.columns:
+                        df[col] = 0
+                    df[col] = pd.to_numeric(
+                        df[col].astype(str).str.replace(",",""), errors="coerce"
+                    ).fillna(0)
+
+            matched, unmatched_bank, unmatched_ax = match_transactions(
+                active_bank_df, active_ax_df
+            )
             st.session_state["bank_recon"] = {
                 "matched": matched,
                 "unmatched_bank": unmatched_bank,
                 "unmatched_ax": unmatched_ax,
                 "period": period,
                 "opening_balance": opening_balance,
+                "bank_df": active_bank_df,
+                "ax_df": active_ax_df,
             }
             log_action(current_user, "BANK RECON RUN", period,
-                      f"Bank rec run — {len(matched)} matched, {len(unmatched_bank)} unmatched bank, {len(unmatched_ax)} unmatched AX")
+                      f"Bank rec — {len(matched)} matched, {len(unmatched_bank)} unmatched bank, {len(unmatched_ax)} unmatched AX")
+        else:
+            st.error("Please upload or enable sample data for both Bank Statement and AX Ledger before running.")
 
     if st.session_state.get("bank_recon"):
         recon = st.session_state["bank_recon"]
         matched = recon["matched"]
         unmatched_bank = recon["unmatched_bank"]
         unmatched_ax = recon["unmatched_ax"]
+        stored_bank_df = recon.get("bank_df", active_bank_df or SAMPLE_BANK_STATEMENT)
+        stored_ax_df = recon.get("ax_df", active_ax_df or SAMPLE_AX_LEDGER)
 
         total_matched = sum(r["Amount (KES)"] for r in matched)
         total_unmatched_bank = sum(r["Amount (KES)"] for r in unmatched_bank)
@@ -214,8 +283,8 @@ def render_bank_recon_page():
         st.divider()
         st.subheader("📋 Reconciliation Statement")
 
-        bank_closing = opening_balance + bank_df["Credit"].sum() - bank_df["Debit"].sum()
-        ax_closing = opening_balance + ax_df["Credit"].sum() - ax_df["Debit"].sum()
+        bank_closing = recon["opening_balance"] + stored_bank_df["Credit"].sum() - stored_bank_df["Debit"].sum()
+        ax_closing = recon["opening_balance"] + stored_ax_df["Credit"].sum() - stored_ax_df["Debit"].sum()
         unmatched_bank_net = sum(
             r["Amount (KES)"] * (1 if r["Type"] == "Credit" else -1)
             for r in unmatched_bank
