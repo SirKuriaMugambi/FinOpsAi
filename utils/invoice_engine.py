@@ -97,13 +97,23 @@ def extract_invoice_from_pdf(filepath: str) -> dict:
         if total_match:
             fields["total"] = parse_number(total_match.group(1))
 
-        # VAT amount
+        # VAT amount — look for VAT amount specifically, not VAT registration number
+        # Must be followed by amount pattern, not alphanumeric (to avoid PIN/VAT reg numbers)
         vat_match = re.search(
-            r'(?:vat|tax)[:\s]*([\d,]+\.?\d*)',
+            r'(?:vat\s*(?:amount|charged|on\s*invoice)?|tax\s*amount)[:\s]*([\d,]+\.?\d*)',
             full_text, re.IGNORECASE
         )
+        if not vat_match:
+            # Try finding VAT(16%) or VAT 16% followed by amount
+            vat_match = re.search(
+                r'vat\s*\(?1[0-9]%?\)?[:\s]*([\d,]+\.?\d*)',
+                full_text, re.IGNORECASE
+            )
         if vat_match:
-            fields["vat_amount"] = parse_number(vat_match.group(1))
+            val = parse_number(vat_match.group(1))
+            # Sanity check — VAT amount should be less than 10 million for typical invoices
+            if val and val < 10000000:
+                fields["vat_amount"] = val
 
         # Subtotal
         sub_match = re.search(

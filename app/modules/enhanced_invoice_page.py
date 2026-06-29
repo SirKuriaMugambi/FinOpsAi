@@ -137,22 +137,46 @@ def _render_invoice_form(extracted, vendors, vendor_names, rates, current_user, 
     st.divider()
     st.subheader("📊 Ledger Mapping (Chrysal Chart of Accounts)")
 
+    # Auto-suggest ledger based on vendor type
+    vendor_obj = next((v for v in vendors if v["name"] == vendor_names[0]), None)
+    default_ledger_idx = 0
+    default_dept_idx = 0
+    default_cc_idx = 0
+
+    # Smart defaults based on vendor type from demo data
+    vendor_ledger_map = {
+        "Supplier": ("5000", "OPS", "511"),
+        "Consultant": ("6500", "TC", "206"),
+        "Mixed": ("6000", "ADM", "121"),
+    }
+
     col_a, col_b, col_c = st.columns(3)
     with col_a:
         account_options = list_accounts_for_select()
-        selected_account = st.selectbox("Ledger Account", account_options, key=f"{key}_ledger")
+        # Pre-select based on vendor
+        selected_vendor_obj = next((v for v in vendors if v["name"] == vendor_choice), None)
+        v_type = selected_vendor_obj.get("type", "Supplier") if selected_vendor_obj else "Supplier"
+        default_ledger, default_dept, default_cc = vendor_ledger_map.get(v_type, ("5000", "OPS", "511"))
+
+        # Also check demo invoice override
+        if demo.get("ledger"):
+            default_ledger = demo["ledger"].split(" — ")[0]
+
+        default_ledger_option = next((o for o in account_options if o.startswith(default_ledger)), account_options[0])
+        default_ledger_idx = account_options.index(default_ledger_option) if default_ledger_option in account_options else 0
+        selected_account = st.selectbox("Ledger Account", account_options, index=default_ledger_idx, key=f"{key}_ledger")
         ledger_code = selected_account.split(" — ")[0] if selected_account else ""
         account_data = CHART_OF_ACCOUNTS.get(ledger_code, {})
     with col_b:
         dept_options = [f"{k} — {v}" for k, v in DEPARTMENTS.items()]
-        default_dept = f"{account_data.get('dept', 'ADM')} — {DEPARTMENTS.get(account_data.get('dept','ADM'), '')}"
-        dept_idx = dept_options.index(default_dept) if default_dept in dept_options else 0
+        smart_dept = f"{default_dept} — {DEPARTMENTS.get(default_dept, '')}"
+        dept_idx = dept_options.index(smart_dept) if smart_dept in dept_options else 0
         selected_dept = st.selectbox("Department", dept_options, index=dept_idx, key=f"{key}_dept")
         dept_code = selected_dept.split(" — ")[0]
     with col_c:
         cc_options = [f"{k} — {v}" for k, v in COST_CENTRES.items()]
-        default_cc = f"{account_data.get('cc', '000')} — {COST_CENTRES.get(account_data.get('cc','000'), '')}"
-        cc_idx = cc_options.index(default_cc) if default_cc in cc_options else 0
+        smart_cc = f"{default_cc} — {COST_CENTRES.get(default_cc, '')}"
+        cc_idx = cc_options.index(smart_cc) if smart_cc in cc_options else 0
         selected_cc = st.selectbox("Cost Centre", cc_options, index=cc_idx, key=f"{key}_cc")
         cc_code = selected_cc.split(" — ")[0]
 
