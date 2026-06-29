@@ -85,9 +85,32 @@ def render_recon_page():
                 selected_vendor = st.selectbox("Select vendor for remittance advice", vendors_matched)
                 if st.button("Generate Remittance Advice"):
                     remittance = generate_remittance_data(result["matched"], selected_vendor)
-                    st.success(f"Remittance advice for {selected_vendor}")
-                    st.metric("Total Remitting (KES)", format_currency(remittance["total_kes"]))
+                    st.session_state["remittance"] = remittance
+
+                if st.session_state.get("remittance"):
+                    remittance = st.session_state["remittance"]
+                    st.success(f"📋 Remittance Advice — {remittance['vendor']}")
+                    col1, col2 = st.columns(2)
+                    col1.metric("Invoices Being Paid", remittance["invoice_count"])
+                    col2.metric("Total Remitting (KES)", format_currency(remittance["total_kes"]))
                     st.dataframe(pd.DataFrame(remittance["invoices"]), use_container_width=True)
+                    # Download remittance
+                    remittance_text = f"""CHRYSAL INTERNATIONAL AFRICA
+REMITTANCE ADVICE
+{'='*50}
+Vendor: {remittance['vendor']}
+Date: {pd.Timestamp.now().strftime('%d %B %Y')}
+Total Amount: KES {remittance['total_kes']:,.2f}
+
+INVOICES BEING PAID:
+"""
+                    for inv in remittance["invoices"]:
+                        remittance_text += f"\n  • {inv.get('invoice_no','N/A')} — KES {inv.get('amount_kes',0):,.2f}"
+                    remittance_text += f"\n\nPrepared by: Finance Team | For approval by: Charles (Business Controller)"
+                    st.download_button("⬇️ Download Remittance Advice",
+                                      remittance_text.encode(),
+                                      f"Remittance_{remittance['vendor'].replace(' ','_')}.txt",
+                                      "text/plain")
 
             if result["unmatched_payments"]:
                 st.subheader("❌ Unmatched Payments")
