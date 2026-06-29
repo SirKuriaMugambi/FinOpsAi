@@ -65,61 +65,70 @@ def render_recon_page():
             payments = load_payments_from_df(pay_df)
             result = reconcile(invoices, payments, rates)
             st.session_state.recon_result = result
+            st.session_state["remittance"] = None  # reset remittance on new recon
+        else:
+            st.error("Please provide both invoice and payment data before running reconciliation.")
 
-            s = result["summary"]
-            col_a, col_b, col_c = st.columns(3)
-            col_a.metric("✅ Matched", s["total_matched"],
-                         f"KES {s['matched_value_kes']:,.0f}")
-            col_b.metric("⚠️ Unmatched Payments", s["total_unmatched_payments"],
-                         f"KES {s['unmatched_payment_value_kes']:,.0f}")
-            col_c.metric("📋 Outstanding Invoices", s["total_outstanding_invoices"],
-                         f"KES {s['outstanding_value_kes']:,.0f}")
+    # Render results from session state — persists across button clicks
+    result = st.session_state.get("recon_result")
+    if result:
+        s = result["summary"]
+        col_a, col_b, col_c = st.columns(3)
+        col_a.metric("✅ Matched", s["total_matched"],
+                     f"KES {s['matched_value_kes']:,.0f}")
+        col_b.metric("⚠️ Unmatched Payments", s["total_unmatched_payments"],
+                     f"KES {s['unmatched_payment_value_kes']:,.0f}")
+        col_c.metric("📋 Outstanding Invoices", s["total_outstanding_invoices"],
+                     f"KES {s['outstanding_value_kes']:,.0f}")
 
-            if result["matched"]:
-                st.subheader("✅ Matched Items")
-                st.dataframe(pd.DataFrame(result["matched"]), use_container_width=True)
+        if result["matched"]:
+            st.subheader("✅ Matched Items — Ready for Remittance")
+            st.dataframe(pd.DataFrame(result["matched"]), use_container_width=True)
 
-                # Remittance advice
-                st.subheader("📋 Generate Remittance Advice")
-                vendors_matched = list(set(m["vendor"] for m in result["matched"]))
-                selected_vendor = st.selectbox("Select vendor for remittance advice", vendors_matched)
-                if st.button("Generate Remittance Advice"):
-                    remittance = generate_remittance_data(result["matched"], selected_vendor)
-                    st.session_state["remittance"] = remittance
+            st.subheader("📋 Generate Remittance Advice")
+            st.caption("Select a vendor from the matched list to generate their remittance advice")
+            vendors_matched = list(set(m["vendor"] for m in result["matched"]))
+            selected_vendor = st.selectbox("Select vendor", vendors_matched)
 
-                if st.session_state.get("remittance"):
-                    remittance = st.session_state["remittance"]
-                    st.success(f"📋 Remittance Advice — {remittance['vendor']}")
-                    col1, col2 = st.columns(2)
-                    col1.metric("Invoices Being Paid", remittance["invoice_count"])
-                    col2.metric("Total Remitting (KES)", format_currency(remittance["total_kes"]))
-                    st.dataframe(pd.DataFrame(remittance["invoices"]), use_container_width=True)
-                    # Download remittance
-                    remittance_text = f"""CHRYSAL INTERNATIONAL AFRICA
+            if st.button("📋 Generate Remittance Advice"):
+                remittance = generate_remittance_data(result["matched"], selected_vendor)
+                st.session_state["remittance"] = remittance
+
+            if st.session_state.get("remittance"):
+                remittance = st.session_state["remittance"]
+                st.success(f"✅ Remittance Advice — {remittance['vendor']}")
+                col1, col2 = st.columns(2)
+                col1.metric("Invoices Being Paid", remittance["invoice_count"])
+                col2.metric("Total Remitting (KES)", format_currency(remittance["total_kes"]))
+                st.dataframe(pd.DataFrame(remittance["invoices"]), use_container_width=True)
+
+                remittance_text = f"""CHRYSAL INTERNATIONAL AFRICA
 REMITTANCE ADVICE
 {'='*50}
 Vendor: {remittance['vendor']}
 Date: {pd.Timestamp.now().strftime('%d %B %Y')}
-Total Amount: KES {remittance['total_kes']:,.2f}
+Total Amount Remitting: KES {remittance['total_kes']:,.2f}
+Number of Invoices: {remittance['invoice_count']}
 
 INVOICES BEING PAID:
 """
-                    for inv in remittance["invoices"]:
-                        remittance_text += f"\n  • {inv.get('invoice_no','N/A')} — KES {inv.get('amount_kes',0):,.2f}"
-                    remittance_text += f"\n\nPrepared by: Finance Team | For approval by: Charles (Business Controller)"
-                    st.download_button("⬇️ Download Remittance Advice",
-                                      remittance_text.encode(),
-                                      f"Remittance_{remittance['vendor'].replace(' ','_')}.txt",
-                                      "text/plain")
+                for inv in remittance["invoices"]:
+                    remittance_text += f"\n  Invoice: {inv.get('invoice_no','N/A')} | Amount: KES {inv.get('amount_kes',0):,.2f} | Date: {inv.get('payment_date','')}"
+                remittance_text += f"\n\n{'='*50}\nPrepared by: Finance Team\nFor approval by: Charles (Business Controller)\nPayment to be processed by: Tony (Finance Manager)"
 
-            if result["unmatched_payments"]:
-                st.subheader("❌ Unmatched Payments")
-                st.error("These payments could not be matched to any invoice — investigate before filing.")
-                st.dataframe(pd.DataFrame(result["unmatched_payments"]), use_container_width=True)
+                st.download_button(
+                    "⬇️ Download Remittance Advice",
+                    remittance_text.encode(),
+                    f"Remittance_{remittance['vendor'].replace(' ','_')}.txt",
+                    "text/plain"
+                )
 
-            if result["unmatched_invoices"]:
-                st.subheader("📋 Still Outstanding Invoices")
-                st.warning("These invoices have no corresponding payment on record.")
-                st.dataframe(pd.DataFrame(result["unmatched_invoices"]), use_container_width=True)
-        else:
-            st.error("Please provide both invoice and payment data before running reconciliation.")
+        if result["unmatched_payments"]:
+            st.subheader("❌ Unmatched Payments")
+            st.error("These payments could not be matched to any invoice — investigate before filing.")
+            st.dataframe(pd.DataFrame(result["unmatched_payments"]), use_container_width=True)
+
+        if result["unmatched_invoices"]:
+            st.subheader("📋 Still Outstanding Invoices")
+            st.warning("These invoices have no corresponding payment on record.")
+            st.dataframe(pd.DataFrame(result["unmatched_invoices"]), use_container_width=True)
