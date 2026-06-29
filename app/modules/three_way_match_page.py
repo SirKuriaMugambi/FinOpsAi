@@ -133,20 +133,23 @@ def render_three_way_matching_page():
 
     with tab3:
         st.subheader("Run 3-Way Match")
-        use_sample_inv = st.checkbox("Use sample invoice data", value=True, key="inv_sample")
+        use_sample_inv = st.checkbox("Use sample invoice data", value=False, key="inv_sample")
         if use_sample_inv:
             invoices = SAMPLE_INVOICES.copy()
+            st.dataframe(pd.DataFrame(invoices), use_container_width=True)
         else:
             inv_file = st.file_uploader("Upload invoices for matching", type=["xlsx","csv"], key="inv_upload")
             invoices = []
             if inv_file:
                 df = pd.read_excel(inv_file) if inv_file.name.endswith(("xlsx","xls")) else pd.read_csv(inv_file)
                 invoices = df.to_dict("records")
+                st.dataframe(df, use_container_width=True)
 
-        use_sample_pos2 = st.session_state.get("po_sample", True)
-        use_sample_grns2 = st.session_state.get("grn_sample", True)
-        pos2 = SAMPLE_POS if use_sample_pos2 else []
-        grns2 = SAMPLE_GRNS if use_sample_grns2 else []
+        # Always use sample POs and GRNs as the reference data
+        # In production these would come from AX directly
+        pos2 = SAMPLE_POS
+        grns2 = SAMPLE_GRNS
+        st.info("📋 Matching against: POs and GRNs from the Purchase Orders and Goods Receipts tabs")
 
         if st.button("🔗 Run 3-Way Match", type="primary", use_container_width=True):
             results = run_three_way_match(pos2, grns2, invoices)
