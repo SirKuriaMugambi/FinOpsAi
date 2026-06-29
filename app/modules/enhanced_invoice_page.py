@@ -137,34 +137,29 @@ def _render_invoice_form(extracted, vendors, vendor_names, rates, current_user, 
     st.divider()
     st.subheader("📊 Ledger Mapping (Chrysal Chart of Accounts)")
 
-    # Auto-suggest ledger based on vendor type
-    vendor_obj = next((v for v in vendors if v["name"] == vendor_names[0]), None)
-    default_ledger_idx = 0
-    default_dept_idx = 0
-    default_cc_idx = 0
-
-    # Smart defaults based on vendor type from demo data
+    # Auto-map from vendor master — each vendor has stored default ledger/dept/CC
     vendor_ledger_map = {
         "Supplier": ("5000", "OPS", "511"),
         "Consultant": ("6500", "TC", "206"),
         "Mixed": ("6000", "ADM", "121"),
     }
 
+    # Get vendor's stored defaults first
+    selected_vendor_obj_temp = next((v for v in vendors if v["name"] == (extracted.get("vendor", vendor_names[0] if vendor_names else ""))), vendors[0] if vendors else None)
+    if selected_vendor_obj_temp:
+        default_ledger = selected_vendor_obj_temp.get("default_ledger") or vendor_ledger_map.get(selected_vendor_obj_temp.get("type","Supplier"), ("5000","OPS","511"))[0]
+        default_dept = selected_vendor_obj_temp.get("default_dept") or vendor_ledger_map.get(selected_vendor_obj_temp.get("type","Supplier"), ("5000","OPS","511"))[1]
+        default_cc = selected_vendor_obj_temp.get("default_cc") or vendor_ledger_map.get(selected_vendor_obj_temp.get("type","Supplier"), ("5000","OPS","511"))[2]
+    else:
+        default_ledger, default_dept, default_cc = "5000", "OPS", "511"
+
     col_a, col_b, col_c = st.columns(3)
     with col_a:
         account_options = list_accounts_for_select()
-        # Pre-select based on vendor
-        selected_vendor_obj = next((v for v in vendors if v["name"] == vendor_choice), None)
-        v_type = selected_vendor_obj.get("type", "Supplier") if selected_vendor_obj else "Supplier"
-        default_ledger, default_dept, default_cc = vendor_ledger_map.get(v_type, ("5000", "OPS", "511"))
-
-        # Also check demo invoice override
-        if demo.get("ledger"):
-            default_ledger = demo["ledger"].split(" — ")[0]
-
         default_ledger_option = next((o for o in account_options if o.startswith(default_ledger)), account_options[0])
         default_ledger_idx = account_options.index(default_ledger_option) if default_ledger_option in account_options else 0
-        selected_account = st.selectbox("Ledger Account", account_options, index=default_ledger_idx, key=f"{key}_ledger")
+        selected_account = st.selectbox("Ledger Account", account_options, index=default_ledger_idx, key=f"{key}_ledger",
+                                        help="Auto-mapped from vendor master — override if needed")
         ledger_code = selected_account.split(" — ")[0] if selected_account else ""
         account_data = CHART_OF_ACCOUNTS.get(ledger_code, {})
     with col_b:

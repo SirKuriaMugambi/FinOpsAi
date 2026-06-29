@@ -72,6 +72,9 @@ DEFAULT_VENDORS = [
         "vat_treatment": "Standard (16%)",
         "wht_type": "Supplier (2%)",
         "currency": "KES",
+        "default_ledger": "5000",
+        "default_dept": "OPS",
+        "default_cc": "511",
         "notes": "Chemical/agricultural supplies",
     },
     {
@@ -81,6 +84,9 @@ DEFAULT_VENDORS = [
         "vat_treatment": "Standard (16%)",
         "wht_type": "Supplier (2%)",
         "currency": "KES",
+        "default_ledger": "5300",
+        "default_dept": "OPS",
+        "default_cc": "511",
         "notes": "Courier and logistics",
     },
     {
@@ -90,6 +96,9 @@ DEFAULT_VENDORS = [
         "vat_treatment": "Standard (16%)",
         "wht_type": "Consultant (5%)",
         "currency": "KES",
+        "default_ledger": "6500",
+        "default_dept": "TC",
+        "default_cc": "206",
         "notes": "Audit and advisory services",
     },
     {
@@ -99,6 +108,9 @@ DEFAULT_VENDORS = [
         "vat_treatment": "Standard (16%)",
         "wht_type": "Supplier (2%)",
         "currency": "KES",
+        "default_ledger": "6200",
+        "default_dept": "ADM",
+        "default_cc": "121",
         "notes": "Electricity utility",
     },
     {
@@ -108,6 +120,9 @@ DEFAULT_VENDORS = [
         "vat_treatment": "Standard (16%)",
         "wht_type": "Supplier (2%)",
         "currency": "KES",
+        "default_ledger": "6300",
+        "default_dept": "ADM",
+        "default_cc": "121",
         "notes": "Telecoms and data services",
     },
     {
@@ -117,6 +132,9 @@ DEFAULT_VENDORS = [
         "vat_treatment": "Standard (16%)",
         "wht_type": "Both (2% goods / 5% services)",
         "currency": "KES",
+        "default_ledger": "6400",
+        "default_dept": "ADM",
+        "default_cc": "121",
         "notes": "Tax advisory and audit",
     },
     {
@@ -126,6 +144,9 @@ DEFAULT_VENDORS = [
         "vat_treatment": "Zero Rated (0%)",
         "wht_type": "Supplier (2%)",
         "currency": "USD",
+        "default_ledger": "5100",
+        "default_dept": "OPS",
+        "default_cc": "511",
         "notes": "International export supplies — zero rated",
     },
     {
@@ -135,6 +156,9 @@ DEFAULT_VENDORS = [
         "vat_treatment": "Zero Rated (0%)",
         "wht_type": "Exempt",
         "currency": "EUR",
+        "default_ledger": "2010",
+        "default_dept": "FIN",
+        "default_cc": "121",
         "notes": "Parent company — intercompany transactions",
     },
 ]
