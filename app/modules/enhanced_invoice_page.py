@@ -35,6 +35,24 @@ def render_enhanced_invoice_page():
     current_user = st.session_state.get("current_user", "Finance Team")
 
     doc_type = st.radio("Document Type", ["📄 Vendor Invoice", "📋 Debit Note", "📋 Credit Note"], horizontal=True)
+
+    # Demo Invoice button — one click pre-fill for demos
+    if st.button("🎯 Load Demo Invoice (Bayer East Africa)", help="Pre-fills a realistic Chrysal AP invoice for demo purposes"):
+        st.session_state["demo_invoice"] = {
+            "invoice_number": "BAY-2026-055",
+            "invoice_date": "01/06/2026",
+            "currency": "KES",
+            "subtotal": 450000.0,
+            "vat_amount": 72000.0,
+            "total": 522000.0,
+            "cu_invoice_number": "KRA-CU-20260601-055",
+            "vendor": "Bayer East Africa Ltd",
+            "invoice_type": "Production/Freight-in",
+            "ledger": "5000 — Cost of Goods Sold",
+        }
+        st.rerun()
+
+    demo = st.session_state.get("demo_invoice", {})
     st.divider()
 
     tab1, tab2 = st.tabs(["📁 Upload PDF/Excel", "✍️ Manual Entry"])
@@ -54,7 +72,8 @@ def render_enhanced_invoice_page():
             _render_invoice_form(extracted, vendors, vendor_names, rates, current_user, doc_type, key="upload")
 
     with tab2:
-        _render_invoice_form({}, vendors, vendor_names, rates, current_user, doc_type, key="manual")
+        demo = st.session_state.get("demo_invoice", {})
+        _render_invoice_form(demo, vendors, vendor_names, rates, current_user, doc_type, key="manual")
 
     # Processed invoices table
     if st.session_state.get("processed_invoices"):

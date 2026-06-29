@@ -58,15 +58,20 @@ with st.sidebar:
     module = st.radio("Navigate", [
         "🏠 Dashboard",
         "📄 Invoice Processor",
+        "🔗 3-Way Matching",
         "🔄 AP Reconciliation",
+        "🏦 Bank Reconciliation",
         "🧾 WHT Calculator",
         "💰 AR Receipting",
+        "🌍 Intercompany",
+        "👥 Payroll",
         "📊 Budget vs Actual",
+        "📑 Financial Statements",
         "✅ Month-End Checklist",
         "💵 Cash Flow Forecaster",
         "🔍 Audit Trail",
         "⚙️ Vendor Master",
-        "🏦 Chart of Accounts",
+        "📋 Chart of Accounts",
     ])
 
     st.divider()
@@ -85,18 +90,33 @@ if "Dashboard" in module:
 elif "Invoice" in module:
     from app.modules.enhanced_invoice_page import render_enhanced_invoice_page
     render_enhanced_invoice_page()
+elif "3-Way" in module:
+    from app.modules.three_way_match_page import render_three_way_matching_page
+    render_three_way_matching_page()
 elif "AP Reconciliation" in module:
     from app.modules.recon_page import render_recon_page
     render_recon_page()
+elif "Bank Reconciliation" in module:
+    from app.modules.bank_recon_page import render_bank_recon_page
+    render_bank_recon_page()
 elif "WHT" in module:
     from app.modules.wht_page import render_wht_page
     render_wht_page()
 elif "AR Receipting" in module:
     from app.modules.ar_page import render_ar_page
     render_ar_page()
+elif "Intercompany" in module:
+    from app.modules.intercompany_page import render_intercompany_page
+    render_intercompany_page()
+elif "Payroll" in module:
+    from app.modules.payroll_page import render_payroll_page
+    render_payroll_page()
 elif "Budget" in module:
     from app.modules.budget_page import render_budget_page
     render_budget_page()
+elif "Financial Statements" in module:
+    from app.modules.financial_statements_page import render_financial_statements_page
+    render_financial_statements_page()
 elif "Month-End" in module:
     from app.modules.monthend_page import render_monthend_page
     render_monthend_page()

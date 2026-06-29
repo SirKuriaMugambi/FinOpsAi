@@ -7,8 +7,34 @@ from datetime import date
 
 def render_dashboard():
     st.title("⚙️ FinOps AI")
-    st.caption("Finance Operations Automation Platform — built for private company finance teams")
+    st.caption("Chrysal International Africa — Finance Operating System")
     st.divider()
+
+    # Pre-load sample data so dashboard never shows empty on first visit
+    if not st.session_state.get("processed_invoices"):
+        st.session_state.processed_invoices = [
+            {"vendor_name": "Bayer East Africa Ltd", "invoice_number": "BAY-2026-055",
+             "total_kes": 522000, "wht_kes": 9000, "net_payable_kes": 513000, "posting_ready": True},
+            {"vendor_name": "DHL Express Kenya", "invoice_number": "DHL-8821",
+             "total_kes": 98600, "wht_kes": 1700, "net_payable_kes": 96900, "posting_ready": True},
+            {"vendor_name": "Deloitte East Africa", "invoice_number": "DEL-2026-04",
+             "total_kes": 371200, "wht_kes": 16000, "net_payable_kes": 355200, "posting_ready": False},
+        ]
+    if not st.session_state.get("wht_payments"):
+        st.session_state.wht_payments = [
+            {"vendor_name": "Bayer East Africa Ltd", "wht_type": "Supplier (2%)",
+             "amount": 450000, "currency": "KES", "cu_invoice_number": "KRA-CU-20260601-055",
+             "is_service": False, "payment_ref": "BAY-2026-055", "payment_date": "20/06/2026",
+             "invoice_date": "01/06/2026", "vendor_pin": "", "kra_rate_used": ""},
+            {"vendor_name": "DHL Express Kenya", "wht_type": "Supplier (2%)",
+             "amount": 85000, "currency": "KES", "cu_invoice_number": "KRA-CU-20260601-056",
+             "is_service": False, "payment_ref": "DHL-8821", "payment_date": "20/06/2026",
+             "invoice_date": "01/06/2026", "vendor_pin": "", "kra_rate_used": ""},
+            {"vendor_name": "Deloitte East Africa", "wht_type": "Consultant (5%)",
+             "amount": 320000, "currency": "KES", "cu_invoice_number": "KRA-CU-20260601-057",
+             "is_service": True, "payment_ref": "DEL-2026-04", "payment_date": "20/06/2026",
+             "invoice_date": "01/06/2026", "vendor_pin": "", "kra_rate_used": ""},
+        ]
 
     # Key metrics from session state
     processed = st.session_state.get("processed_invoices", [])
