@@ -14,11 +14,23 @@ def render_dashboard():
     if not st.session_state.get("processed_invoices"):
         st.session_state.processed_invoices = [
             {"vendor_name": "Bayer East Africa Ltd", "invoice_number": "BAY-2026-055",
-             "total_kes": 522000, "wht_kes": 9000, "net_payable_kes": 513000, "posting_ready": True},
+             "cu_invoice_number": "KRA-CU-20260601-055",
+             "total_kes": 522000, "wht_kes": 9000, "net_payable_kes": 513000,
+             "posting_ready": True, "wht_rate_pct": "2%", "doc_type": "Invoice",
+             "ledger_account": "5000", "department": "OPS", "cost_centre": "511",
+             "approver": "Harrison"},
             {"vendor_name": "DHL Express Kenya", "invoice_number": "DHL-8821",
-             "total_kes": 98600, "wht_kes": 1700, "net_payable_kes": 96900, "posting_ready": True},
+             "cu_invoice_number": "KRA-CU-20260601-056",
+             "total_kes": 98600, "wht_kes": 1700, "net_payable_kes": 96900,
+             "posting_ready": True, "wht_rate_pct": "2%", "doc_type": "Invoice",
+             "ledger_account": "5300", "department": "OPS", "cost_centre": "511",
+             "approver": "Harrison"},
             {"vendor_name": "Deloitte East Africa", "invoice_number": "DEL-2026-04",
-             "total_kes": 371200, "wht_kes": 16000, "net_payable_kes": 355200, "posting_ready": False},
+             "cu_invoice_number": "KRA-CU-20260601-057",
+             "total_kes": 371200, "wht_kes": 16000, "net_payable_kes": 355200,
+             "posting_ready": False, "wht_rate_pct": "5%", "doc_type": "Invoice",
+             "ledger_account": "6500", "department": "TC", "cost_centre": "206",
+             "approver": "Charles"},
         ]
     if not st.session_state.get("wht_payments"):
         st.session_state.wht_payments = [

@@ -97,23 +97,41 @@ def extract_invoice_from_pdf(filepath: str) -> dict:
         if total_match:
             fields["total"] = parse_number(total_match.group(1))
 
-        # VAT amount — look for VAT amount specifically, not VAT registration number
-        # Must be followed by amount pattern, not alphanumeric (to avoid PIN/VAT reg numbers)
+        # VAT amount — multiple patterns, avoiding VAT registration numbers
+        vat_amount_found = None
+        # Pattern 1: VAT(16%) or VAT (16%) followed by amount
         vat_match = re.search(
-            r'(?:vat\s*(?:amount|charged|on\s*invoice)?|tax\s*amount)[:\s]*([\d,]+\.?\d*)',
+            r'vat\s*\(?\s*1[0-9]\s*%?\s*\)?[:\s]+([\d,]+\.?\d*)',
             full_text, re.IGNORECASE
         )
-        if not vat_match:
-            # Try finding VAT(16%) or VAT 16% followed by amount
-            vat_match = re.search(
-                r'vat\s*\(?1[0-9]%?\)?[:\s]*([\d,]+\.?\d*)',
-                full_text, re.IGNORECASE
-            )
         if vat_match:
             val = parse_number(vat_match.group(1))
-            # Sanity check — VAT amount should be less than 10 million for typical invoices
             if val and val < 10000000:
-                fields["vat_amount"] = val
+                vat_amount_found = val
+
+        # Pattern 2: "VAT:" or "Tax:" followed by number on same line
+        if not vat_amount_found:
+            for line in full_text.split('\n'):
+                if re.search(r'\bvat\b|\btax\b', line, re.IGNORECASE):
+                    nums = re.findall(r'[\d,]+\.?\d*', line)
+                    for n in nums:
+                        val = parse_number(n)
+                        if val and 100 < val < 10000000:
+                            vat_amount_found = val
+                            break
+                if vat_amount_found:
+                    break
+
+        if vat_amount_found:
+            fields["vat_amount"] = vat_amount_found
+
+        # CU Invoice Number
+        cu_match = re.search(
+            r'(?:cu\s*invoice\s*(?:no|number|#)?|cu\s*no|control\s*unit)[:\s.]*([\w\-]+)',
+            full_text, re.IGNORECASE
+        )
+        if cu_match:
+            fields["cu_invoice_number"] = cu_match.group(1).strip()
 
         # Subtotal
         sub_match = re.search(
