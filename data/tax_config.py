@@ -44,8 +44,7 @@ CU Invoice Number (Control Unit / ETR serial number):
 VAT_TREATMENTS = {
     "Standard (16%)": 0.16,
     "Zero Rated (0%)": 0.00,
-    "Exempt": None,        # None = no VAT applicable
-    "Special Rate (5%)": 0.05,
+    "Exempt": None,
 }
 
 # --- WHT Rate Options ---

@@ -1,7 +1,7 @@
 """
-FinOps AI — Finance Operations Automation Platform
-Built for private company finance teams to automate AP/AR workflows,
-tax calculations, reconciliation, and management reporting.
+FinOps AI — Chrysal International Africa Finance Operating System
+Comprehensive finance automation platform covering the full monthly
+finance cycle from daily invoice processing to CEO-level reporting.
 """
 
 import streamlit as st
@@ -11,10 +11,12 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.currency import get_rates, format_currency
-from data.tax_config import DEFAULT_VENDORS, VAT_TREATMENTS, WHT_TYPES
+from utils.audit_trail import init_audit_trail, log_action, AuditAction
+from data.tax_config import DEFAULT_VENDORS
+from data.chart_of_accounts import COST_CENTRES
 
 st.set_page_config(
-    page_title="FinOps AI",
+    page_title="FinOps AI — Chrysal Finance OS",
     page_icon="⚙️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -33,12 +35,24 @@ if "recon_result" not in st.session_state:
     st.session_state.recon_result = None
 if "ar_result" not in st.session_state:
     st.session_state.ar_result = None
+if "current_user" not in st.session_state:
+    st.session_state.current_user = "Finance Team"
+
+init_audit_trail()
 
 # ---------- Sidebar ----------
 with st.sidebar:
-    st.image("https://img.icons8.com/color/96/accounting.png", width=60)
-    st.title("FinOps AI")
-    st.caption("Finance Operations Automation")
+    st.title("⚙️ FinOps AI")
+    st.caption("Chrysal International Africa\nFinance Operating System")
+    st.divider()
+
+    # User selector
+    user = st.selectbox("Logged in as:", [
+        "Finance Team", "Mercy (Senior Accountant)",
+        "Tony (Finance Manager)", "Harrison (Production)",
+        "Charles (Business Controller)", "Niels (MD)"
+    ])
+    st.session_state.current_user = user
     st.divider()
 
     module = st.radio("Navigate", [
@@ -47,12 +61,17 @@ with st.sidebar:
         "🔄 AP Reconciliation",
         "🧾 WHT Calculator",
         "💰 AR Receipting",
+        "📊 Budget vs Actual",
+        "✅ Month-End Checklist",
+        "💵 Cash Flow Forecaster",
+        "🔍 Audit Trail",
         "⚙️ Vendor Master",
+        "🏦 Chart of Accounts",
     ])
 
     st.divider()
-    rates_status = "🟢 Live rates" if st.session_state.rates_live else "🔵 Cached rates"
-    st.caption(f"Exchange rates: {rates_status}")
+    rates_status = "🟢 Live" if st.session_state.rates_live else "🔵 Cached"
+    st.caption(f"FX Rates: {rates_status}")
     st.caption(f"1 USD = KES {st.session_state.rates['USD']:,.2f}")
     st.caption(f"1 EUR = KES {st.session_state.rates['EUR']:,.2f}")
     if st.button("🔄 Refresh rates"):
@@ -64,8 +83,8 @@ if "Dashboard" in module:
     from app.modules.dashboard import render_dashboard
     render_dashboard()
 elif "Invoice" in module:
-    from app.modules.invoice_page import render_invoice_page
-    render_invoice_page()
+    from app.modules.enhanced_invoice_page import render_enhanced_invoice_page
+    render_enhanced_invoice_page()
 elif "AP Reconciliation" in module:
     from app.modules.recon_page import render_recon_page
     render_recon_page()
@@ -75,6 +94,21 @@ elif "WHT" in module:
 elif "AR Receipting" in module:
     from app.modules.ar_page import render_ar_page
     render_ar_page()
+elif "Budget" in module:
+    from app.modules.budget_page import render_budget_page
+    render_budget_page()
+elif "Month-End" in module:
+    from app.modules.monthend_page import render_monthend_page
+    render_monthend_page()
+elif "Cash Flow" in module:
+    from app.modules.cashflow_page import render_cashflow_page
+    render_cashflow_page()
+elif "Audit" in module:
+    from app.modules.audit_page import render_audit_page
+    render_audit_page()
 elif "Vendor Master" in module:
     from app.modules.vendor_page import render_vendor_page
     render_vendor_page()
+elif "Chart of Accounts" in module:
+    from app.modules.coa_page import render_coa_page
+    render_coa_page()

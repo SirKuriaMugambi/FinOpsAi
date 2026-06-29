@@ -29,7 +29,8 @@ def render_wht_page():
             vendor = next((v for v in vendors if v["name"] == vendor_choice), vendors[0])
             st.info(f"Default WHT type: **{vendor['wht_type']}**")
         with col2:
-            amount = st.number_input("Gross Payment Amount", min_value=0.0, step=1000.0, key="wht_amount")
+            amount = st.number_input("Invoice Subtotal (before VAT)", min_value=0.0, step=1000.0, key="wht_amount",
+                                     help="Enter the net amount before VAT — WHT is calculated on this figure, not the VAT-inclusive total.")
             currency = st.selectbox("Currency", ["KES","USD","EUR","GBP"], key="wht_curr")
             payment_date = st.text_input("Payment Date (DD/MM/YYYY)", key="wht_date")
         with col3:
