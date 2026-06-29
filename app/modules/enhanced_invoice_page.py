@@ -122,7 +122,9 @@ def _render_invoice_form(extracted, vendors, vendor_names, rates, current_user, 
         vat_shown = st.number_input("VAT on Document", value=float(extracted.get("vat_amount") or 0), step=100.0, key=f"{key}_vat")
         total = st.number_input("Gross Total", value=float(extracted.get("total") or 0), step=100.0, key=f"{key}_total")
     with col3:
-        cu_number = st.text_input("CU Invoice Number (KRA)", key=f"{key}_cu",
+        cu_number = st.text_input("CU Invoice Number (KRA)",
+                                  value=extracted.get("cu_invoice_number") or "",
+                                  key=f"{key}_cu",
                                   help="KRA ETR/TIMS serial number — mandatory for WHT filing")
         vendor_choice = st.selectbox("Vendor", vendor_names, key=f"{key}_vendor")
         is_service = st.checkbox("Service invoice?", key=f"{key}_svc")
