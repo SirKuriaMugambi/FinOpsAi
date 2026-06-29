@@ -125,9 +125,9 @@ def extract_invoice_from_pdf(filepath: str) -> dict:
         if vat_amount_found:
             fields["vat_amount"] = vat_amount_found
 
-        # CU Invoice Number
+        # CU Invoice Number — matches "CU Invoice No.:" format
         cu_match = re.search(
-            r'(?:cu\s*invoice\s*(?:no|number|#)?|cu\s*no|control\s*unit)[:\s.]*([\w\-]+)',
+            r'(?:cu\s*invoice\s*no\.?|cu\s*no\.?|control\s*unit\s*no\.?)[:\s]+([\w\-]+)',
             full_text, re.IGNORECASE
         )
         if cu_match:
