@@ -7,7 +7,17 @@ never crashes mid-calculation just because of a network issue.
 
 import requests
 from datetime import datetime
+import pytz
 from typing import Optional
+
+KENYA_TZ = pytz.timezone("Africa/Nairobi")
+
+
+def now_nairobi() -> datetime:
+    """Return current datetime in Africa/Nairobi timezone — used app-wide for consistent timestamps."""
+    return datetime.now(KENYA_TZ)
+
+
 
 # Fallback rates (updated periodically — these are approximate mid-2026 rates)
 FALLBACK_RATES_TO_KES = {

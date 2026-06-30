@@ -13,6 +13,7 @@ KRA audits, and internal controls.
 """
 
 import streamlit as st
+from utils.currency import now_nairobi
 from datetime import datetime
 
 
@@ -38,7 +39,7 @@ def log_action(
     """
     init_audit_trail()
     entry = {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": now_nairobi().strftime("%Y-%m-%d %H:%M:%S"),
         "user": user,
         "action": action,
         "document_ref": document_ref,

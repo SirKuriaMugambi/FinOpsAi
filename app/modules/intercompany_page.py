@@ -9,7 +9,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
-from utils.currency import format_currency, convert_to_kes
+from utils.currency import format_currency, convert_to_kes, now_nairobi
 from utils.audit_trail import log_action, AuditAction
 
 
@@ -86,7 +86,7 @@ def render_intercompany_page():
             ic["payables"].append({
                 "ref": new_ref, "description": new_desc,
                 "amount": new_amt, "currency": "EUR",
-                "date": datetime.now().strftime("%d/%m/%Y"),
+                "date": now_nairobi().strftime("%d/%m/%Y"),
                 "status": "Pending confirmation", "type": "Payable"
             })
             st.rerun()
@@ -113,7 +113,7 @@ def render_intercompany_page():
             ic["receivables"].append({
                 "ref": new_ref_r, "description": new_desc_r,
                 "amount": new_amt_r, "currency": "EUR",
-                "date": datetime.now().strftime("%d/%m/%Y"),
+                "date": now_nairobi().strftime("%d/%m/%Y"),
                 "status": "Pending confirmation", "type": "Receivable"
             })
             st.rerun()
@@ -142,7 +142,7 @@ def render_intercompany_page():
                 if st.button("✅ Confirm Intercompany Balances", type="primary"):
                     ic["confirmed"] = True
                     ic["confirmed_by"] = current_user
-                    ic["confirmed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    ic["confirmed_at"] = now_nairobi().strftime("%Y-%m-%d %H:%M")
                     log_action(current_user, AuditAction.INTERCOMPANY_CONFIRMED, period,
                               f"IC balances confirmed — Payables €{total_payables_eur:,.0f} / Receivables €{total_receivables_eur:,.0f}")
                     st.rerun()
@@ -156,8 +156,39 @@ def render_intercompany_page():
             st.success(f"✅ Intercompany balances confirmed by {ic['confirmed_by']} at {ic['confirmed_at']}")
             st.info("Month-end checklist item 'Intercompany balance confirmation' can now be ticked as complete.")
 
-        # Export
-        all_txns = ic["payables"] + ic["receivables"]
-        df = pd.DataFrame(all_txns)
-        st.download_button("⬇️ Export IC Transactions", df.to_csv(index=False).encode(),
-                          f"Intercompany_{period.replace(' ','_')}.csv", "text/csv")
+        # Export — separated by entity (Chrysal Africa's books vs Chrysal BV's confirmation)
+        st.divider()
+        st.subheader("📥 Export Intercompany Reconciliation")
+
+        import io
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            # Chrysal Africa's own records
+            africa_payables_df = pd.DataFrame(ic["payables"])
+            africa_receivables_df = pd.DataFrame(ic["receivables"])
+            if not africa_payables_df.empty:
+                africa_payables_df.to_excel(writer, sheet_name="Chrysal Africa - Payables", index=False)
+            if not africa_receivables_df.empty:
+                africa_receivables_df.to_excel(writer, sheet_name="Chrysal Africa - Receivables", index=False)
+
+            # Summary comparing both entities' figures
+            summary_df = pd.DataFrame({
+                "Entity": ["Chrysal Africa (Our Records)", "Chrysal Africa (Our Records)",
+                           "Chrysal BV (Parent Confirmation)", "Chrysal BV (Parent Confirmation)"],
+                "Item": ["Total IC Payables (EUR)", "Total IC Receivables (EUR)",
+                        "Total IC Payables (EUR)", "Total IC Receivables (EUR)"],
+                "Amount (EUR)": [
+                    total_payables_eur, total_receivables_eur,
+                    parent_payables if 'parent_payables' in dir() else "Not yet confirmed",
+                    parent_receivables if 'parent_receivables' in dir() else "Not yet confirmed",
+                ]
+            })
+            summary_df.to_excel(writer, sheet_name="Entity Comparison Summary", index=False)
+
+        st.download_button(
+            "⬇️ Download IC Reconciliation (Chrysal Africa vs Chrysal BV)",
+            output.getvalue(),
+            f"Intercompany_Reconciliation_{period.replace(' ','_')}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        st.caption("Excel file contains separate sheets for Chrysal Africa's payables, receivables, and a side-by-side comparison against Chrysal BV's confirmed figures.")

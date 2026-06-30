@@ -8,21 +8,21 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from utils.currency import format_currency, convert_to_kes
+from utils.currency import format_currency, convert_to_kes, now_nairobi
 
 
 SAMPLE_AR = [
-    {"customer": "Rose Farm BV", "invoice_no": "INV-2026-041", "amount": 58000, "currency": "EUR", "due_date": (datetime.now() + timedelta(days=7)).strftime("%d/%m/%Y"), "probability": 0.95},
-    {"customer": "Florimex GmbH", "invoice_no": "INV-2026-042", "amount": 34800, "currency": "EUR", "due_date": (datetime.now() + timedelta(days=15)).strftime("%d/%m/%Y"), "probability": 0.90},
-    {"customer": "Naivas Ltd", "invoice_no": "INV-2026-043", "amount": 245000, "currency": "KES", "due_date": (datetime.now() + timedelta(days=30)).strftime("%d/%m/%Y"), "probability": 0.85},
-    {"customer": "Rose Farm BV", "invoice_no": "INV-2026-044", "amount": 62000, "currency": "EUR", "due_date": (datetime.now() + timedelta(days=45)).strftime("%d/%m/%Y"), "probability": 0.80},
+    {"customer": "Rose Farm BV", "invoice_no": "INV-2026-041", "amount": 58000, "currency": "EUR", "due_date": (now_nairobi() + timedelta(days=7)).strftime("%d/%m/%Y"), "probability": 0.95},
+    {"customer": "Florimex GmbH", "invoice_no": "INV-2026-042", "amount": 34800, "currency": "EUR", "due_date": (now_nairobi() + timedelta(days=15)).strftime("%d/%m/%Y"), "probability": 0.90},
+    {"customer": "Naivas Ltd", "invoice_no": "INV-2026-043", "amount": 245000, "currency": "KES", "due_date": (now_nairobi() + timedelta(days=30)).strftime("%d/%m/%Y"), "probability": 0.85},
+    {"customer": "Rose Farm BV", "invoice_no": "INV-2026-044", "amount": 62000, "currency": "EUR", "due_date": (now_nairobi() + timedelta(days=45)).strftime("%d/%m/%Y"), "probability": 0.80},
 ]
 
 SAMPLE_AP = [
-    {"vendor": "Bayer East Africa", "invoice_no": "BAY-055", "amount": 450000, "currency": "KES", "due_date": (datetime.now() + timedelta(days=5)).strftime("%d/%m/%Y")},
-    {"vendor": "DHL Express", "invoice_no": "DHL-221", "amount": 85000, "currency": "KES", "due_date": (datetime.now() + timedelta(days=10)).strftime("%d/%m/%Y")},
-    {"vendor": "Chrysal BV", "invoice_no": "IC-2026-06", "amount": 28000, "currency": "EUR", "due_date": (datetime.now() + timedelta(days=20)).strftime("%d/%m/%Y")},
-    {"vendor": "Kenya Power", "invoice_no": "KP-884", "amount": 62000, "currency": "KES", "due_date": (datetime.now() + timedelta(days=25)).strftime("%d/%m/%Y")},
+    {"vendor": "Bayer East Africa", "invoice_no": "BAY-055", "amount": 450000, "currency": "KES", "due_date": (now_nairobi() + timedelta(days=5)).strftime("%d/%m/%Y")},
+    {"vendor": "DHL Express", "invoice_no": "DHL-221", "amount": 85000, "currency": "KES", "due_date": (now_nairobi() + timedelta(days=10)).strftime("%d/%m/%Y")},
+    {"vendor": "Chrysal BV", "invoice_no": "IC-2026-06", "amount": 28000, "currency": "EUR", "due_date": (now_nairobi() + timedelta(days=20)).strftime("%d/%m/%Y")},
+    {"vendor": "Kenya Power", "invoice_no": "KP-884", "amount": 62000, "currency": "KES", "due_date": (now_nairobi() + timedelta(days=25)).strftime("%d/%m/%Y")},
 ]
 
 
@@ -65,7 +65,7 @@ def render_cashflow_page():
 
     st.divider()
     if st.button("🔮 Generate Cash Flow Forecast", type="primary", use_container_width=True):
-        today = datetime.now()
+        today = now_nairobi()
         periods = [
             ("30 Days", today + timedelta(days=30)),
             ("60 Days", today + timedelta(days=60)),

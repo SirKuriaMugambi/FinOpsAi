@@ -7,6 +7,7 @@ accruals, payroll, recon sign-off, and management reporting.
 """
 
 import streamlit as st
+from utils.currency import now_nairobi
 import pandas as pd
 from datetime import datetime
 from utils.audit_trail import log_action, AuditAction
@@ -196,7 +197,7 @@ def render_monthend_page():
                     if checked != state["done"]:
                         state["done"] = checked
                         if checked:
-                            state["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                            state["timestamp"] = now_nairobi().strftime("%Y-%m-%d %H:%M")
                             state["confirmed_by"] = current_user
                             log_action(current_user, AuditAction.MONTH_END_TASK, period,
                                       f"Task completed: {task['task']}")

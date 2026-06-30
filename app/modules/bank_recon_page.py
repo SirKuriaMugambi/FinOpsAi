@@ -9,7 +9,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
-from utils.currency import format_currency, convert_to_kes
+from utils.currency import format_currency, convert_to_kes, now_nairobi
 from utils.audit_trail import log_action, AuditAction
 
 
@@ -337,7 +337,7 @@ def render_bank_recon_page():
                     st.session_state["bank_recon_confirmed"] = True
                     st.session_state["bank_recon_confirmation"] = {
                         "by": current_user,
-                        "at": datetime.now().strftime("%Y-%m-%d %H:%M")
+                        "at": now_nairobi().strftime("%Y-%m-%d %H:%M")
                     }
                     log_action(current_user, "BANK RECON APPROVED", period,
                               "Bank reconciliation signed off")

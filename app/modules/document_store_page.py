@@ -6,6 +6,7 @@ Organized chronologically by month for easy retrieval.
 """
 
 import streamlit as st
+from utils.currency import now_nairobi
 import pandas as pd
 from datetime import datetime
 from utils.audit_trail import log_action
@@ -20,14 +21,14 @@ def save_document(doc_type: str, title: str, content: str, period: str = None, r
     """Save a document to the central store."""
     init_document_store()
     if period is None:
-        period = datetime.now().strftime("%B %Y")
+        period = now_nairobi().strftime("%B %Y")
     st.session_state.document_store.append({
         "type": doc_type,
         "title": title,
         "content": content,
         "period": period,
         "related_ref": related_ref,
-        "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "saved_at": now_nairobi().strftime("%Y-%m-%d %H:%M"),
         "saved_by": st.session_state.get("current_user", "Finance Team"),
     })
 

@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import io
 from utils.reconciliation_engine import reconcile, generate_remittance_data
-from utils.currency import format_currency
+from utils.currency import format_currency, now_nairobi
 
 
 SAMPLE_INVOICES = pd.DataFrame([
@@ -106,7 +106,7 @@ def render_recon_page():
 REMITTANCE ADVICE
 {'='*50}
 Vendor: {remittance['vendor']}
-Date: {pd.Timestamp.now().strftime('%d %B %Y')}
+Date: {now_nairobi().strftime('%d %B %Y')} (Nairobi time)
 Total Amount Remitting: KES {remittance['total_kes']:,.2f}
 Number of Invoices: {remittance['invoice_count']}
 

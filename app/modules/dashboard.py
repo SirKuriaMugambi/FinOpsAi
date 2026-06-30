@@ -15,34 +15,34 @@ def render_dashboard():
         st.session_state.processed_invoices = [
             {"vendor_name": "Bayer East Africa Ltd", "invoice_number": "BAY-2026-055",
              "cu_invoice_number": "KRA-CU-20260601-055",
-             "total_kes": 522000, "wht_kes": 9000, "net_payable_kes": 513000,
-             "posting_ready": True, "wht_rate_pct": "2%", "doc_type": "Invoice",
+             "total_kes": 522000, "wht_kes": 13500, "wvat_kes": 10440, "net_payable_kes": 498060,
+             "posting_ready": True, "wht_rate_pct": "3%", "doc_type": "Invoice",
              "ledger_account": "5000", "department": "OPS", "cost_centre": "511",
              "approver": "Harrison"},
             {"vendor_name": "DHL Express Kenya", "invoice_number": "DHL-8821",
              "cu_invoice_number": "KRA-CU-20260601-056",
-             "total_kes": 98600, "wht_kes": 1700, "net_payable_kes": 96900,
-             "posting_ready": True, "wht_rate_pct": "2%", "doc_type": "Invoice",
+             "total_kes": 98600, "wht_kes": 2550, "wvat_kes": 1972, "net_payable_kes": 94078,
+             "posting_ready": True, "wht_rate_pct": "3%", "doc_type": "Invoice",
              "ledger_account": "5300", "department": "OPS", "cost_centre": "511",
              "approver": "Harrison"},
             {"vendor_name": "Deloitte East Africa", "invoice_number": "DEL-2026-04",
              "cu_invoice_number": "KRA-CU-20260601-057",
-             "total_kes": 371200, "wht_kes": 16000, "net_payable_kes": 355200,
+             "total_kes": 371200, "wht_kes": 16000, "wvat_kes": 7424, "net_payable_kes": 347776,
              "posting_ready": False, "wht_rate_pct": "5%", "doc_type": "Invoice",
              "ledger_account": "6500", "department": "TC", "cost_centre": "206",
              "approver": "Charles"},
         ]
     if not st.session_state.get("wht_payments"):
         st.session_state.wht_payments = [
-            {"vendor_name": "Bayer East Africa Ltd", "wht_type": "Supplier (2%)",
+            {"vendor_name": "Bayer East Africa Ltd", "wht_type": "General Goods/Contractual (3%)",
              "amount": 450000, "vat_amount": 72000, "currency": "KES", "cu_invoice_number": "KRA-CU-20260601-055",
              "is_service": False, "payment_ref": "BAY-2026-055", "payment_date": "20/06/2026",
              "invoice_date": "01/06/2026", "vendor_pin": "", "kra_rate_used": ""},
-            {"vendor_name": "DHL Express Kenya", "wht_type": "Supplier (2%)",
+            {"vendor_name": "DHL Express Kenya", "wht_type": "General Goods/Contractual (3%)",
              "amount": 85000, "vat_amount": 13600, "currency": "KES", "cu_invoice_number": "KRA-CU-20260601-056",
              "is_service": False, "payment_ref": "DHL-8821", "payment_date": "20/06/2026",
              "invoice_date": "01/06/2026", "vendor_pin": "", "kra_rate_used": ""},
-            {"vendor_name": "Deloitte East Africa", "wht_type": "Consultant (5%)",
+            {"vendor_name": "Deloitte East Africa", "wht_type": "Professional/Consultancy (5%)",
              "amount": 320000, "vat_amount": 51200, "currency": "KES", "cu_invoice_number": "KRA-CU-20260601-057",
              "is_service": True, "payment_ref": "DEL-2026-04", "payment_date": "20/06/2026",
              "invoice_date": "01/06/2026", "vendor_pin": "", "kra_rate_used": ""},
@@ -113,9 +113,12 @@ def render_dashboard():
         if wht_payments:
             from utils.wht_calculator import calculate_wht_for_payments
             wht_result = calculate_wht_for_payments(wht_payments, st.session_state.rates)
-            st.metric("Total WHT Payable (KES)", format_currency(wht_result["total_wht_kes"]))
-            st.metric("2% WHT (Suppliers)", format_currency(wht_result["total_wht_2pct_kes"]))
-            st.metric("5% WHT (Consultants)", format_currency(wht_result["total_wht_5pct_kes"]))
+            col_x, col_y = st.columns(2)
+            col_x.metric("Total Withheld (WHT + WVAT)", format_currency(wht_result["total_withheld_kes"]))
+            col_y.metric("2% WVAT — All Payments", format_currency(wht_result["total_wvat_kes"]))
+            col_p, col_q = st.columns(2)
+            col_p.metric("3% WHT (General Goods)", format_currency(wht_result["total_wht_3pct_kes"]))
+            col_q.metric("5% WHT (Professional)", format_currency(wht_result["total_wht_5pct_kes"]))
         else:
             st.info("No WHT payments entered yet. Use the WHT Calculator module.")
 

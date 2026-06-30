@@ -9,7 +9,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import io
-from utils.currency import format_currency
+from utils.currency import format_currency, now_nairobi
 from utils.audit_trail import log_action, AuditAction
 from data.chart_of_accounts import CHART_OF_ACCOUNTS, COST_CENTRES, DEPARTMENTS
 
@@ -148,7 +148,7 @@ def render_budget_page():
             overspends = merged[merged["Status"] == "🔴 Overspend"]
             report_text = f"""CHRYSAL INTERNATIONAL AFRICA
 BUDGET vs ACTUAL MANAGEMENT REPORT — {period}
-Generated: {pd.Timestamp.now().strftime('%d %B %Y %H:%M')}
+Generated: {now_nairobi().strftime('%d %B %Y %H:%M')} (Nairobi time)
 
 EXECUTIVE SUMMARY
 Total Budget:     KES {total_budget:>15,.2f}
