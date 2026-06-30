@@ -162,7 +162,7 @@ def render_financial_statements_page():
 
             st.divider()
 
-            tab1, tab2, tab3 = st.tabs(["📊 P&L Statement", "⚖️ Balance Sheet", "📄 Management Report"])
+            tab1, tab2, tab3, tab4 = st.tabs(["📊 P&L Statement", "⚖️ Balance Sheet", "💵 Cash Flow Statement", "📄 Management Report"])
 
             with tab1:
                 st.subheader(f"Income Statement — {period}")
@@ -231,6 +231,84 @@ def render_financial_statements_page():
                     st.warning(f"⚠️ Difference of KES {diff:,.0f} — check trial balance completeness")
 
             with tab3:
+                st.subheader(f"Cash Flow Statement — {period}")
+                st.caption(f"{company} | Indirect Method")
+
+                # Operating activities — start from PAT, add back depreciation, adjust working capital
+                depreciation = tb[tb["Account"].astype(str) == "6900"]["Debit"].sum()
+
+                ar_change = tb[tb["Account"].astype(str).isin(["1100","1110"])]["Net"].sum()
+                ap_change = tb[tb["Account"].astype(str).isin(["2000","2010"])]["Net"].sum()
+                inventory_change = tb[tb["Account"].astype(str).isin(["1200","1210"])]["Net"].sum()
+                accrued_change = tb[tb["Account"].astype(str) == "2200"]["Net"].sum()
+
+                cash_from_ops = pat + depreciation - ar_change + ap_change - inventory_change - accrued_change
+
+                # Investing activities
+                ppe_movement = tb[tb["Account"].astype(str) == "1500"]["Debit"].sum()
+                cash_from_investing = -ppe_movement
+
+                # Financing activities — loans, share capital movements (none in this period typically)
+                loan_movement = tb[tb["Account"].astype(str) == "2400"]["Credit"].sum()
+                cash_from_financing = loan_movement
+
+                net_cash_movement = cash_from_ops + cash_from_investing + cash_from_financing
+                opening_cash = tb[tb["Account"].astype(str) == "1000"]["Debit"].sum() - net_cash_movement
+                closing_cash = opening_cash + net_cash_movement
+
+                cf_data = {
+                    "Line Item": [
+                        "Profit After Tax", "Add: Depreciation",
+                        "(Increase)/Decrease in Receivables", "Increase/(Decrease) in Payables",
+                        "(Increase)/Decrease in Inventory", "Increase/(Decrease) in Accruals",
+                        "Net Cash from Operating Activities", "",
+                        "Purchase of Property, Plant & Equipment",
+                        "Net Cash from Investing Activities", "",
+                        "Proceeds from Loans",
+                        "Net Cash from Financing Activities", "",
+                        "Net Increase/(Decrease) in Cash",
+                        "Opening Cash Balance",
+                        "Closing Cash Balance",
+                    ],
+                    "KES": [
+                        f"{pat:,.0f}", f"{depreciation:,.0f}",
+                        f"({ar_change:,.0f})" if ar_change > 0 else f"{abs(ar_change):,.0f}",
+                        f"{ap_change:,.0f}" if ap_change > 0 else f"({abs(ap_change):,.0f})",
+                        f"({inventory_change:,.0f})" if inventory_change > 0 else f"{abs(inventory_change):,.0f}",
+                        f"{accrued_change:,.0f}" if accrued_change > 0 else f"({abs(accrued_change):,.0f})",
+                        f"{cash_from_ops:,.0f}", "",
+                        f"({ppe_movement:,.0f})",
+                        f"{cash_from_investing:,.0f}", "",
+                        f"{loan_movement:,.0f}",
+                        f"{cash_from_financing:,.0f}", "",
+                        f"{net_cash_movement:,.0f}",
+                        f"{opening_cash:,.0f}",
+                        f"{closing_cash:,.0f}",
+                    ]
+                }
+                st.dataframe(pd.DataFrame(cf_data), use_container_width=True)
+
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Cash from Operations", format_currency(cash_from_ops))
+                col2.metric("Cash from Investing", format_currency(cash_from_investing))
+                col3.metric("Cash from Financing", format_currency(cash_from_financing))
+
+                fig_cf = go.Figure(go.Waterfall(
+                    name="Cash Flow", orientation="v",
+                    measure=["absolute","relative","relative","total"],
+                    x=["Opening Cash","Operating","Investing","Closing Cash"],
+                    y=[opening_cash, cash_from_ops, cash_from_investing, 0],
+                    connector={"line":{"color":"rgb(63,63,63)"}},
+                ))
+                fig_cf.update_layout(title="Cash Flow Movement", height=400)
+                st.plotly_chart(fig_cf, use_container_width=True)
+
+                if cash_from_ops > 0:
+                    st.success(f"✅ Positive operating cash flow of KES {cash_from_ops:,.0f} — the core business is generating cash.")
+                else:
+                    st.warning(f"⚠️ Negative operating cash flow of KES {abs(cash_from_ops):,.0f} — investigate working capital management.")
+
+            with tab4:
                 st.subheader(f"Management Report — {period}")
                 st.caption(f"{company} | Prepared by: {current_user}")
 
