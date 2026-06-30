@@ -31,13 +31,18 @@ def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
     for payment in payments:
         wht_type = payment.get("wht_type", "Exempt")
         is_service = payment.get("is_service", False)
-        amount = float(payment.get("amount", 0))
+        amount = float(payment.get("amount", 0))  # subtotal before VAT
+        vat_amount = float(payment.get("vat_amount", 0))
         currency = payment.get("currency", "KES")
         amount_kes = convert_to_kes(amount, currency, rates)
+        vat_kes = convert_to_kes(vat_amount, currency, rates)
 
         wht_rate = get_wht_rate(wht_type, is_service=is_service)
+        # WHT is calculated on the subtotal (before VAT) per KRA rules — this is correct
         wht_kes = amount_kes * wht_rate
-        net_kes = amount_kes - wht_kes
+        # Net paid to vendor = Subtotal + VAT − WHT (vendor still receives the VAT they charged)
+        gross_kes = amount_kes + vat_kes
+        net_kes = gross_kes - wht_kes
 
         entry = {
             "Vendor Name": payment.get("vendor_name", ""),
@@ -46,10 +51,12 @@ def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
             "Payment Ref": payment.get("payment_ref", ""),
             "Payment Date": payment.get("payment_date", ""),
             "Invoice Date": payment.get("invoice_date", ""),
-            "Gross Amount (KES)": round(amount_kes, 2),
+            "Subtotal — WHT Base (KES)": round(amount_kes, 2),
+            "VAT (KES)": round(vat_kes, 2),
+            "Gross Invoice (KES)": round(gross_kes, 2),
             "WHT Rate": f"{wht_rate*100:.0f}%",
             "WHT Amount (KES)": round(wht_kes, 2),
-            "Net Paid (KES)": round(net_kes, 2),
+            "Net Paid to Vendor (KES)": round(net_kes, 2),
             "Currency": currency,
             "Original Amount": round(amount, 2),
             "KRA Rate Used": payment.get("kra_rate_used", "Market rate"),
@@ -104,7 +111,7 @@ def generate_kra_csv(entries_2pct: list) -> bytes:
         "CU Invoice Number": "CU Invoice Number",
         "Invoice Date": "Invoice Date",
         "Payment Date": "Date of Payment",
-        "Gross Amount (KES)": "Gross Amount",
+        "Subtotal — WHT Base (KES)": "Gross Amount",
         "WHT Amount (KES)": "Tax Withheld",
         "Payment Ref": "Payment Reference",
     }

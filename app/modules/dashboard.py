@@ -35,15 +35,15 @@ def render_dashboard():
     if not st.session_state.get("wht_payments"):
         st.session_state.wht_payments = [
             {"vendor_name": "Bayer East Africa Ltd", "wht_type": "Supplier (2%)",
-             "amount": 450000, "currency": "KES", "cu_invoice_number": "KRA-CU-20260601-055",
+             "amount": 450000, "vat_amount": 72000, "currency": "KES", "cu_invoice_number": "KRA-CU-20260601-055",
              "is_service": False, "payment_ref": "BAY-2026-055", "payment_date": "20/06/2026",
              "invoice_date": "01/06/2026", "vendor_pin": "", "kra_rate_used": ""},
             {"vendor_name": "DHL Express Kenya", "wht_type": "Supplier (2%)",
-             "amount": 85000, "currency": "KES", "cu_invoice_number": "KRA-CU-20260601-056",
+             "amount": 85000, "vat_amount": 13600, "currency": "KES", "cu_invoice_number": "KRA-CU-20260601-056",
              "is_service": False, "payment_ref": "DHL-8821", "payment_date": "20/06/2026",
              "invoice_date": "01/06/2026", "vendor_pin": "", "kra_rate_used": ""},
             {"vendor_name": "Deloitte East Africa", "wht_type": "Consultant (5%)",
-             "amount": 320000, "currency": "KES", "cu_invoice_number": "KRA-CU-20260601-057",
+             "amount": 320000, "vat_amount": 51200, "currency": "KES", "cu_invoice_number": "KRA-CU-20260601-057",
              "is_service": True, "payment_ref": "DEL-2026-04", "payment_date": "20/06/2026",
              "invoice_date": "01/06/2026", "vendor_pin": "", "kra_rate_used": ""},
         ]

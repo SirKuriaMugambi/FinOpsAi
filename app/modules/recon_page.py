@@ -123,6 +123,12 @@ INVOICES BEING PAID:
                     "text/plain"
                 )
 
+                from app.modules.document_store_page import save_document
+                if not st.session_state.get(f"remit_saved_{remittance['vendor']}"):
+                    save_document("Remittance Advice", f"Remittance — {remittance['vendor']}",
+                                 remittance_text, related_ref=remittance['vendor'])
+                    st.session_state[f"remit_saved_{remittance['vendor']}"] = True
+
         if result["unmatched_payments"]:
             st.subheader("❌ Unmatched Payments")
             st.error("These payments could not be matched to any invoice — investigate before filing.")

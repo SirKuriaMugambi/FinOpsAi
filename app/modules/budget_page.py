@@ -165,5 +165,9 @@ OVERSPEND ITEMS ({len(overspends)} line(s) require attention):
             st.text_area("Management Report (copy to share with team)", report_text, height=300)
             st.download_button("⬇️ Download Report", report_text.encode(),
                               f"Budget_vs_Actual_{period.replace(' ','_')}.txt", "text/plain")
+
+            from app.modules.document_store_page import save_document
+            save_document("Management Report", f"Budget vs Actual — {period}",
+                         report_text, period=period)
         else:
             st.error("Please provide both budget and actuals data.")

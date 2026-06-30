@@ -31,6 +31,8 @@ def render_wht_page():
         with col2:
             amount = st.number_input("Invoice Subtotal (before VAT)", min_value=0.0, step=1000.0, key="wht_amount",
                                      help="Enter the net amount before VAT — WHT is calculated on this figure, not the VAT-inclusive total.")
+            vat_amount = st.number_input("VAT on Invoice (16%)", min_value=0.0, step=100.0, key="wht_vat_amount",
+                                         help="Vendor still receives this VAT — it's added back before WHT is deducted.")
             currency = st.selectbox("Currency", ["KES","USD","EUR","GBP"], key="wht_curr")
             payment_date = st.text_input("Payment Date (DD/MM/YYYY)", key="wht_date")
         with col3:
@@ -49,6 +51,7 @@ def render_wht_page():
                 "vendor_pin": vendor_pin,
                 "wht_type": wht_override,
                 "amount": amount,
+                "vat_amount": vat_amount,
                 "currency": currency,
                 "is_service": is_service,
                 "payment_ref": payment_ref,

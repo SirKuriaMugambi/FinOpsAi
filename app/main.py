@@ -70,6 +70,7 @@ with st.sidebar:
         "✅ Month-End Checklist",
         "💵 Cash Flow Forecaster",
         "🔍 Audit Trail",
+        "🗄️ Document Store",
         "⚙️ Vendor Master",
         "📋 Chart of Accounts",
     ])
@@ -126,6 +127,9 @@ elif "Cash Flow" in module:
 elif "Audit" in module:
     from app.modules.audit_page import render_audit_page
     render_audit_page()
+elif "Document Store" in module:
+    from app.modules.document_store_page import render_document_store_page
+    render_document_store_page()
 elif "Vendor Master" in module:
     from app.modules.vendor_page import render_vendor_page
     render_vendor_page()

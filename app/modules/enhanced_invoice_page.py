@@ -290,6 +290,7 @@ Approver       : {approver_info['approver']} ({approver_info['role']})
                 "cu_invoice_number": cu_number,
                 "wht_type": result["wht_type"],
                 "amount": subtotal,
+                "vat_amount": vat_shown,
                 "currency": currency,
                 "is_service": is_service,
                 "payment_ref": inv_no,

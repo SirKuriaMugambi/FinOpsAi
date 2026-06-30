@@ -348,5 +348,9 @@ For review by: Tony (Finance Manager) → Charles (Business Controller) → Niel
                     "text/plain"
                 )
 
+                from app.modules.document_store_page import save_document
+                save_document("Financial Statement", f"Financial Statements — {period}",
+                             narrative, period=period)
+
                 log_action(current_user, "FINANCIAL STATEMENTS GENERATED", period,
                           f"P&L and Balance Sheet generated — Revenue KES {revenue:,.0f}, PAT KES {pat:,.0f}")
