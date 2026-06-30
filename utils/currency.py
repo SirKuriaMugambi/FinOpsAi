@@ -64,8 +64,15 @@ def convert_to_kes(amount: float, currency: str, rates: Optional[dict] = None) -
     return amount * rate
 
 
-def format_currency(amount: float, currency: str = "KES") -> str:
-    """Format a currency amount for display."""
+def format_currency(amount: float, currency: str = "KES", compact: bool = True) -> str:
+    """Format a currency amount for display. Compact mode avoids st.metric truncation."""
     symbols = {"KES": "KES ", "USD": "$ ", "EUR": "€ ", "GBP": "£ "}
     symbol = symbols.get(currency, f"{currency} ")
+
+    if compact:
+        if abs(amount) >= 1_000_000:
+            return f"{symbol}{amount/1_000_000:,.2f}M"
+        elif abs(amount) >= 10_000:
+            return f"{symbol}{amount/1_000:,.1f}K"
+
     return f"{symbol}{amount:,.2f}"

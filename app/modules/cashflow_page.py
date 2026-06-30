@@ -108,12 +108,19 @@ def render_cashflow_page():
                 "Position": "✅ Positive" if cumulative > 0 else "🔴 Negative"
             })
 
-        # Metrics
+        # Metrics — compact formatting to avoid truncation
+        def compact(amount):
+            if abs(amount) >= 1_000_000:
+                return f"KES {amount/1_000_000:,.2f}M"
+            elif abs(amount) >= 1_000:
+                return f"KES {amount/1_000:,.1f}K"
+            return f"KES {amount:,.0f}"
+
         col_a, col_b, col_c, col_d = st.columns(4)
-        col_a.metric("Opening Balance", format_currency(opening_balance))
-        col_b.metric("30-Day Position", format_currency(results[0]["Closing Balance (KES)"]))
-        col_c.metric("60-Day Position", format_currency(results[1]["Closing Balance (KES)"]))
-        col_d.metric("90-Day Position", format_currency(results[2]["Closing Balance (KES)"]))
+        col_a.metric("Opening Balance", compact(opening_balance))
+        col_b.metric("30-Day Position", compact(results[0]["Closing Balance (KES)"]))
+        col_c.metric("60-Day Position", compact(results[1]["Closing Balance (KES)"]))
+        col_d.metric("90-Day Position", compact(results[2]["Closing Balance (KES)"]))
 
         # Chart
         fig = go.Figure()
