@@ -6,22 +6,22 @@ from utils.currency import format_currency
 
 
 SAMPLE_AR_INVOICES = [
-    {"customer": "Rose Farm BV", "invoice_no": "INV-2026-041", "gross_amount": 58000, "currency": "EUR"},
-    {"customer": "Florimex GmbH", "invoice_no": "INV-2026-042", "gross_amount": 34800, "currency": "EUR"},
-    {"customer": "Naivas Ltd", "invoice_no": "INV-2026-043", "gross_amount": 245000, "currency": "KES"},
+    {"customer": "Rose Farm BV", "invoice_no": "INV-2026-041", "net_amount": 58000, "currency": "EUR"},
+    {"customer": "Florimex GmbH", "invoice_no": "INV-2026-042", "net_amount": 34800, "currency": "EUR"},
+    {"customer": "Naivas Ltd", "invoice_no": "INV-2026-043", "net_amount": 245000, "currency": "KES"},
 ]
 
 SAMPLE_AR_RECEIPTS = [
     {"customer": "Rose Farm BV", "receipt_ref": "REC-001", "date": "05/06/2026",
-     "amount_received": 57840, "currency": "EUR", "kra_certificate": "KRA-CERT-001"},
+     "amount_received": 66120, "currency": "EUR", "kra_certificate": "KRA-CERT-001"},
     {"customer": "Naivas Ltd", "receipt_ref": "REC-002", "date": "06/06/2026",
-     "amount_received": 240100, "currency": "KES", "kra_certificate": "Pending"},
+     "amount_received": 279300, "currency": "KES", "kra_certificate": "Pending"},
 ]
 
 
 def render_ar_page():
     st.title("💰 AR Receipting & Customer WHT")
-    st.caption("Receipt customer payments, track the 2% WHT customers withhold on your VAT, and match KRA certificates to invoices. Supports multi-currency invoicing (EUR/USD/KES).")
+    st.caption("Receipt customer payments, track the 2% WHT customers withhold on the taxable value, and match KRA certificates to invoices. Supports multi-currency invoicing (EUR/USD/KES).")
     st.divider()
 
     rates = st.session_state.rates
@@ -41,7 +41,7 @@ def render_ar_page():
                 st.metric("+ 16% VAT", format_currency(breakdown["vat_amount"], currency))
                 st.metric("= Gross Invoice", format_currency(breakdown["gross_amount"], currency))
                 st.divider()
-                st.metric("Customer withholds (2% of VAT)", format_currency(breakdown["customer_wht_on_vat"], currency))
+                st.metric("Customer withholds (2% of taxable value)", format_currency(breakdown["customer_wht_on_vat"], currency))
                 st.metric("✅ Expected Receipt from Customer", format_currency(breakdown["expected_receipt"], currency))
                 st.metric("Expected Receipt (KES)", format_currency(breakdown["expected_receipt_kes"]))
 

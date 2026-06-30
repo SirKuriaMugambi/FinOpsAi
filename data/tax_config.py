@@ -15,7 +15,7 @@ WHT rates (Kenya - on payments to vendors):
 - Threshold: WHT only applies to registered vendors above KES 24,000/year
 
 WHT on VAT (from customers):
-- Customers withhold 2% of the 16% VAT charged on invoices
+- Customers withhold 2% of the taxable value (net amount before VAT) on invoices
 - Filed by customer directly to KRA by 20th of following month
 - Chrysal receipts the net VAT and tracks the withheld portion via KRA portal
 
