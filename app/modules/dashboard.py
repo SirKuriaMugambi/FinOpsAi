@@ -15,19 +15,19 @@ def render_dashboard():
         st.session_state.processed_invoices = [
             {"vendor_name": "Bayer East Africa Ltd", "invoice_number": "BAY-2026-055",
              "cu_invoice_number": "KRA-CU-20260601-055",
-             "total_kes": 522000, "wht_kes": 9000, "wvat_kes": 10440, "net_payable_kes": 502560,
+             "total_kes": 522000, "wht_kes": 9000, "net_payable_kes": 513000,
              "posting_ready": True, "wht_rate_pct": "2%", "doc_type": "Invoice",
              "ledger_account": "5000", "department": "OPS", "cost_centre": "511",
              "approver": "Harrison"},
             {"vendor_name": "DHL Express Kenya", "invoice_number": "DHL-8821",
              "cu_invoice_number": "KRA-CU-20260601-056",
-             "total_kes": 98600, "wht_kes": 1700, "wvat_kes": 1972, "net_payable_kes": 94928,
+             "total_kes": 98600, "wht_kes": 1700, "net_payable_kes": 96900,
              "posting_ready": True, "wht_rate_pct": "2%", "doc_type": "Invoice",
              "ledger_account": "5300", "department": "OPS", "cost_centre": "511",
              "approver": "Harrison"},
             {"vendor_name": "Deloitte East Africa", "invoice_number": "DEL-2026-04",
              "cu_invoice_number": "KRA-CU-20260601-057",
-             "total_kes": 371200, "wht_kes": 16000, "wvat_kes": 7424, "net_payable_kes": 347776,
+             "total_kes": 371200, "wht_kes": 16000, "net_payable_kes": 355200,
              "posting_ready": False, "wht_rate_pct": "5%", "doc_type": "Invoice",
              "ledger_account": "6500", "department": "TC", "cost_centre": "206",
              "approver": "Charles"},
@@ -113,12 +113,10 @@ def render_dashboard():
         if wht_payments:
             from utils.wht_calculator import calculate_wht_for_payments
             wht_result = calculate_wht_for_payments(wht_payments, st.session_state.rates)
-            col_x, col_y = st.columns(2)
-            col_x.metric("Total Withheld (WHT + WVAT)", format_currency(wht_result["total_withheld_kes"]))
-            col_y.metric("2% WVAT — All Payments", format_currency(wht_result["total_wvat_kes"]))
-            col_p, col_q = st.columns(2)
-            col_p.metric("2% WHT (General Goods)", format_currency(wht_result["total_wht_2pct_kes"]))
-            col_q.metric("5% WHT (Professional)", format_currency(wht_result["total_wht_5pct_kes"]))
+            col_p, col_q, col_r = st.columns(3)
+            col_p.metric("Total WHT Payable (KES)", format_currency(wht_result["total_wht_kes"]))
+            col_q.metric("2% WHT (General Goods)", format_currency(wht_result["total_wht_2pct_kes"]))
+            col_r.metric("5% WHT (Professional)", format_currency(wht_result["total_wht_5pct_kes"]))
         else:
             st.info("No WHT payments entered yet. Use the WHT Calculator module.")
 

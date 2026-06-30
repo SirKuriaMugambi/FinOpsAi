@@ -116,12 +116,13 @@ def render_payroll_page():
 
             # Totals
             st.divider()
-            col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Total Gross", format_currency(df_payroll["Gross (KES)"].sum()))
-            col2.metric("Total PAYE", format_currency(df_payroll["PAYE (KES)"].sum()))
-            col3.metric("Total NSSF (Employee)", format_currency(df_payroll["NSSF Employee"].sum()))
-            col4.metric("Total Net Pay", format_currency(df_payroll["Net Pay (KES)"].sum()))
-            col5.metric("NSSF Employer Cost", format_currency(df_payroll["NSSF Employer"].sum()))
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total Gross", format_currency(df_payroll["Gross (KES)"].sum(), compact=False))
+            col2.metric("Total PAYE", format_currency(df_payroll["PAYE (KES)"].sum(), compact=False))
+            col3.metric("Total Net Pay", format_currency(df_payroll["Net Pay (KES)"].sum(), compact=False))
+            col4, col5 = st.columns(2)
+            col4.metric("Total NSSF (Employee)", format_currency(df_payroll["NSSF Employee"].sum(), compact=False))
+            col5.metric("NSSF Employer Cost", format_currency(df_payroll["NSSF Employer"].sum(), compact=False))
 
             # AX Journal
             st.subheader("📋 AX Payroll Posting Journal")
@@ -152,19 +153,19 @@ def render_payroll_page():
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("**KRA — PAYE (iTax)**")
-                st.metric("Total PAYE Due", format_currency(df_payroll["PAYE (KES)"].sum()))
+                st.metric("Total PAYE Due", format_currency(df_payroll["PAYE (KES)"].sum(), compact=False))
                 st.caption("File via KRA iTax by 9th of following month")
                 st.markdown("**NITA**")
-                st.metric("Total NITA Due", format_currency(df_payroll["NITA"].sum()))
+                st.metric("Total NITA Due", format_currency(df_payroll["NITA"].sum(), compact=False))
                 st.caption("File via NITA portal monthly")
             with col2:
                 st.markdown("**NSSF**")
-                st.metric("Employee Contributions", format_currency(df_payroll["NSSF Employee"].sum()))
-                st.metric("Employer Contributions", format_currency(df_payroll["NSSF Employer"].sum()))
-                st.metric("Total NSSF", format_currency(df_payroll["NSSF Employee"].sum() + df_payroll["NSSF Employer"].sum()))
+                st.metric("Employee Contributions", format_currency(df_payroll["NSSF Employee"].sum(), compact=False))
+                st.metric("Employer Contributions", format_currency(df_payroll["NSSF Employer"].sum(), compact=False))
+                st.metric("Total NSSF", format_currency(df_payroll["NSSF Employee"].sum() + df_payroll["NSSF Employer"].sum(), compact=False))
                 st.caption("File via NSSF portal by 9th of following month")
                 st.markdown("**NHIF**")
-                st.metric("Total NHIF", format_currency(df_payroll["NHIF"].sum()))
+                st.metric("Total NHIF", format_currency(df_payroll["NHIF"].sum(), compact=False))
                 st.caption("File via NHIF portal by 9th of following month")
         else:
             st.info("Run payroll computation in the Employee Payroll tab first.")

@@ -1,11 +1,11 @@
-"""WHT & WVAT Calculator Page — KRA Withholding Tax + Withholding VAT calculation and filing prep.
-Chrysal is an appointed KRA Withholding VAT (WVAT) Agent, so both WHT and WVAT are calculated
-together on every applicable payment."""
+"""WHT Calculator Page — KRA Withholding Tax calculation and filing prep.
+Standard WHT only: 2% general goods/contractual, 5% professional/consultancy.
+WHT is calculated on the base amount (before VAT)."""
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 import pytz
-from utils.wht_calculator import calculate_wht_for_payments, generate_kra_csv, generate_wvat_csv, generate_wht_excel
+from utils.wht_calculator import calculate_wht_for_payments, generate_kra_csv, generate_wht_excel
 from utils.currency import format_currency
 from data.tax_config import WHT_TYPES, DEFAULT_VENDORS
 
@@ -13,8 +13,8 @@ KENYA_TZ = pytz.timezone("Africa/Nairobi")
 
 
 def render_wht_page():
-    st.title("🧾 WHT & WVAT Calculator — KRA Filing Prep")
-    st.caption("Chrysal is an appointed KRA Withholding VAT (WVAT) Agent. Both Withholding Income Tax (2%/5%) and Withholding VAT (2% of gross) are calculated and filed separately — by the 20th of every month.")
+    st.title("🧾 WHT Calculator & KRA Filing Prep")
+    st.caption("Calculate Withholding Tax on vendor payments and generate KRA-ready outputs. 2% general goods/contractual via CSV, 5% professional/consultancy via Excel — filed by the 20th of every month.")
     nairobi_now = datetime.now(KENYA_TZ).strftime("%A, %d %B %Y — %H:%M:%S %Z")
     st.caption(f"🕒 Current time (Africa/Nairobi): **{nairobi_now}**")
     st.divider()
@@ -37,12 +37,12 @@ def render_wht_page():
             vendor = next((v for v in vendors if v["name"] == vendor_choice), vendors[0])
             st.info(f"Default WHT type: **{vendor['wht_type']}**")
             cu_invoice_number = st.text_input("CU Invoice Number (KRA)", key="wht_cu_number",
-                                              help="KRA ETR/TIMS serial number — mandatory for both WHT and WVAT filing")
+                                              help="KRA ETR/TIMS serial number — mandatory for WHT filing")
         with col2:
             amount = st.number_input("Base Amount (before VAT)", min_value=0.0, step=1000.0, key="wht_amount",
-                                     help="WHT is calculated on this base figure")
+                                     help="WHT is calculated on this base figure, not the VAT-inclusive total.")
             vat_amount = st.number_input("VAT on Invoice (16%)", min_value=0.0, step=100.0, key="wht_vat_amount",
-                                         help="WVAT (2%) is calculated on Base + VAT combined")
+                                         help="Vendor still receives this VAT — it's added back before WHT is deducted.")
             currency = st.selectbox("Currency", ["KES","USD","EUR","GBP"], key="wht_curr")
         with col3:
             wht_override = st.selectbox("WHT Type", list(WHT_TYPES.keys()),
@@ -94,11 +94,10 @@ def render_wht_page():
         else:
             st.success(f"✅ Next KRA filing deadline: **{result['deadline']}** ({result['days_to_deadline']} days away)")
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Withheld (KES)", format_currency(result["total_withheld_kes"]))
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total WHT Payable (KES)", format_currency(result["total_wht_kes"]))
         col2.metric("2% WHT — General Goods (KES)", format_currency(result["total_wht_2pct_kes"]))
         col3.metric("5% WHT — Professional (KES)", format_currency(result["total_wht_5pct_kes"]))
-        col4.metric("2% WVAT — All Payments (KES)", format_currency(result["total_wvat_kes"]))
 
         st.divider()
 
@@ -113,16 +112,7 @@ def render_wht_page():
             st.subheader("5% WHT — Professional/Consultancy (Excel Import to KRA)")
             st.dataframe(pd.DataFrame(result["5pct_entries"]), use_container_width=True)
 
-        all_entries = result["2pct_entries"] + result["5pct_entries"]
-        if all_entries:
-            st.subheader("2% WVAT — All Withheld Payments (Separate KRA Filing)")
-            st.caption("Chrysal's WVAT Agent obligation applies to every payment above, calculated on the VAT-inclusive amount and filed separately from WHT.")
-            st.dataframe(pd.DataFrame(all_entries)[["Vendor Name", "CU Invoice Number", "Gross Invoice (KES)", "WVAT Amount (KES)"]], use_container_width=True)
-            wvat_csv = generate_wvat_csv(all_entries)
-            st.download_button("⬇️ Download KRA WVAT CSV (2%)", wvat_csv,
-                               file_name="KRA_WVAT_2pct.csv", mime="text/csv")
-
         excel_bytes = generate_wht_excel(result)
-        st.download_button("⬇️ Download Full WHT + WVAT Excel Workbook", excel_bytes,
-                           file_name="KRA_WHT_WVAT_Filing.xlsx",
+        st.download_button("⬇️ Download Full WHT Excel Workbook", excel_bytes,
+                           file_name="KRA_WHT_Filing.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

@@ -7,30 +7,17 @@ VAT rates (Kenya):
 - Zero rated: 0% (exports, certain goods)
 - Exempt: no VAT charged, no input credit
 
-CHRYSAL IS AN APPOINTED KRA WITHHOLDING VAT (WVAT) AGENT.
-This means TWO separate withholding obligations apply on every applicable
-vendor payment, calculated independently and remitted separately:
-
-1. WITHHOLDING VAT (WVAT) — 2% of the VAT-INCLUSIVE amount (Gross Invoice)
-   e.g. Base 4,000 + VAT 640 = Gross 4,640 → WVAT = 4,640 × 2% = 92.80
-
-2. WITHHOLDING INCOME TAX (WHT) — on the BASE amount (before VAT), rate depends on type:
-   - General goods / contractual work: 2% of base (Chrysal's standard rate)
-   - Professional / consultancy services: 5% of base
-   e.g. Base 4,000 → WHT = 4,000 × 2% = 80 (general) or 4,000 × 5% = 200 (professional)
-
-TOTAL WITHHELD = WVAT + WHT (both deducted from the gross payment to the vendor)
-e.g. General goods: 92.80 + 80 = 172.80 total withheld
-e.g. Professional services: 92.80 + 200 = 292.80 total withheld
-
-Net payment to vendor = Gross Invoice − WVAT − WHT
+WHT rates (Kenya — on payments to vendors, AP side):
+- General goods/contractual work: 2% of the base amount (before VAT)
+- Professional/consultancy services: 5% of the base amount (before VAT)
+- WHT is calculated on the base/subtotal only — VAT is excluded from the WHT base
+- Net payment to vendor = Base + VAT − WHT
 
 WHT on VAT (from customers, on Chrysal's AR/sales side):
 - Customers withhold 2% of the taxable value (net amount before VAT) on invoices
 - Filed by customer directly to KRA by 20th of following month
 - Chrysal receipts the net amount and tracks the withheld portion via KRA portal
-- NOTE: this customer-side mechanism is the standard 2% WHT-on-VAT rule, distinct
-  from Chrysal's own WVAT Agent obligation on the AP/payments side above.
+- This is a customer-side obligation, separate from Chrysal's own AP-side WHT above.
 
 IMPORTANT — KRA Exchange Rate for Foreign Currency WHT:
 - When remitting WHT on foreign currency invoices (USD, EUR, GBP),
@@ -66,9 +53,6 @@ WHT_TYPES = {
     "Professional/Consultancy (5%)": 0.05,
     "Exempt": 0.00,
 }
-
-# Chrysal is an appointed KRA Withholding VAT (WVAT) Agent
-WVAT_AGENT_RATE = 0.02  # 2% of the VAT-inclusive (gross) amount, withheld separately from WHT
 
 # --- KRA Filing Deadlines ---
 WHT_FILING_DAY = 20  # 20th of every month
@@ -195,10 +179,6 @@ def get_vat_rate(vat_treatment: str) -> float:
 
 
 def get_wht_rate(wht_type: str, is_service: bool = False) -> float:
-    """
-    Return the standard Withholding Income Tax rate for a vendor type.
-    Note: this is separate from the WVAT_AGENT_RATE (2% on gross),
-    which Chrysal applies on top of this as an appointed WVAT Agent.
-    """
+    """Return the Withholding Tax (WHT) rate for a vendor type — 2% general goods/contractual, 5% professional/consultancy."""
     rate = WHT_TYPES.get(wht_type, 0.0)
     return rate if isinstance(rate, float) else 0.0

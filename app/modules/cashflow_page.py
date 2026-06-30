@@ -65,7 +65,7 @@ def render_cashflow_page():
 
     st.divider()
     if st.button("🔮 Generate Cash Flow Forecast", type="primary", use_container_width=True):
-        today = now_nairobi()
+        today = now_nairobi().replace(tzinfo=None)  # strip timezone for safe comparison with naive dates
         periods = [
             ("30 Days", today + timedelta(days=30)),
             ("60 Days", today + timedelta(days=60)),

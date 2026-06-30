@@ -198,12 +198,12 @@ def process_invoice(
 ) -> dict:
     """
     Apply tax logic to an extracted invoice given a matched vendor.
-    Chrysal is an appointed KRA WVAT Agent, so both WHT (income tax, on base
-    amount) and WVAT (2% of gross/VAT-inclusive amount) are calculated.
+    WHT is calculated on the base amount (before VAT) — 2% general
+    goods/contractual, 5% professional/consultancy.
 
     kra_rate_override: KRA's official exchange rate for the invoice date
     (KES per foreign currency unit). If provided, this rate is used for
-    WHT/WVAT calculation instead of the live market rate. For KES invoices,
+    WHT calculation instead of the live market rate. For KES invoices,
     this is ignored. This reflects real KRA compliance requirements —
     WHT on foreign currency invoices must use KRA's rate for the invoice date.
 
@@ -225,36 +225,30 @@ def process_invoice(
     calculated_vat = subtotal * vat_rate
     invoice_total = subtotal + calculated_vat
 
-    # WHT (income tax) calculation — on subtotal/base, not including VAT
+    # WHT calculation — on subtotal/base, not including VAT
     wht_type = vendor.get("wht_type", "General Goods/Contractual (2%)")
     wht_rate = get_wht_rate(wht_type)
     wht_amount = subtotal * wht_rate
 
-    # WVAT calculation — 2% of the gross (VAT-inclusive) amount, Chrysal's WVAT Agent obligation
-    wvat_rate = 0.02 if wht_rate > 0 else 0.0
-    wvat_amount = invoice_total * wvat_rate
-
-    total_withheld = wht_amount + wvat_amount
-    net_payable = invoice_total - total_withheld
+    # Net paid to vendor = Gross Invoice − WHT (vendor still receives the VAT they charged)
+    net_payable = invoice_total - wht_amount
 
     # KES conversions — general display uses live market rate
     subtotal_kes = convert_to_kes(subtotal, currency, rates)
     vat_kes = convert_to_kes(calculated_vat, currency, rates)
     total_kes = convert_to_kes(invoice_total, currency, rates)
 
-    # WHT/WVAT KES conversion — MUST use KRA's official rate for the invoice date
+    # WHT KES conversion — MUST use KRA's official rate for the invoice date
     # for foreign currency invoices (not the live market rate)
     if currency != "KES" and kra_rate_override and kra_rate_override > 0:
-        # Use KRA's official rate for WHT/WVAT calculation
+        # Use KRA's official rate for WHT calculation
         wht_kes = wht_amount * kra_rate_override
-        wvat_kes = wvat_amount * kra_rate_override
-        net_payable_kes = invoice_total * kra_rate_override - wht_kes - wvat_kes
+        net_payable_kes = invoice_total * kra_rate_override - wht_kes
         kra_rate_used = kra_rate_override
         kra_rate_source = f"KRA official rate ({kra_rate_override:.4f})"
     else:
         # Fall back to live rate — flagged so user knows to verify
         wht_kes = convert_to_kes(wht_amount, currency, rates)
-        wvat_kes = convert_to_kes(wvat_amount, currency, rates)
         net_payable_kes = convert_to_kes(net_payable, currency, rates)
         kra_rate_used = rates.get(currency, 1.0)
         kra_rate_source = "⚠️ Market rate used — enter KRA official rate for compliance"
@@ -274,7 +268,7 @@ def process_invoice(
     if currency != "KES" and not kra_rate_override:
         kra_rate_warning = (
             f"⚠️ KRA rate not entered for this {currency} invoice. "
-            f"WHT/WVAT calculated using market rate (KES {kra_rate_used:,.4f} per {currency}). "
+            f"WHT calculated using market rate (KES {kra_rate_used:,.4f} per {currency}). "
             f"For compliance, enter KRA's official rate for {extracted.get('invoice_date', 'the invoice date')}."
         )
 
@@ -293,15 +287,11 @@ def process_invoice(
         "wht_type": wht_type,
         "wht_rate_pct": f"{wht_rate*100:.0f}%",
         "wht_amount": wht_amount,
-        "wvat_rate_pct": f"{wvat_rate*100:.0f}%",
-        "wvat_amount": wvat_amount,
-        "total_withheld": total_withheld,
         "net_payable": net_payable,
         "subtotal_kes": subtotal_kes,
         "vat_kes": vat_kes,
         "total_kes": total_kes,
         "wht_kes": wht_kes,
-        "wvat_kes": wvat_kes,
         "net_payable_kes": net_payable_kes,
         "kra_rate_used": kra_rate_used,
         "kra_rate_source": kra_rate_source,

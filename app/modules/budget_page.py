@@ -120,9 +120,9 @@ def render_budget_page():
             st.subheader(f"Variance Analysis — {period}")
             display = merged[["Ledger","Account","Department","CC","Budget (KES)","Actual (KES)","Variance (KES)","Variance %","Status"]].copy()
             st.dataframe(display.style.apply(
-                lambda row: ["background-color: #fee2e2" if row["Status"] == "🔴 Overspend"
-                            else ("background-color: #fef9c3" if row["Status"] == "🟡 Near Limit"
-                            else "background-color: #dcfce7") for _ in row], axis=1
+                lambda row: ["background-color: #fca5a5; color: #1a1a1a" if row["Status"] == "🔴 Overspend"
+                            else ("background-color: #fde047; color: #1a1a1a" if row["Status"] == "🟡 Near Limit"
+                            else "background-color: #86efac; color: #1a1a1a") for _ in row], axis=1
             ), use_container_width=True)
 
             # Chart

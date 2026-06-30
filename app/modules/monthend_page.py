@@ -49,7 +49,7 @@ MONTH_END_TASKS = [
     },
     {
         "id": "ar_02", "category": "Accounts Receivable",
-        "task": "Customer WVAT (2% of 16% VAT) receipted and posted from KRA portal",
+        "task": "Customer WVAT (2% of taxable value) receipted and posted from KRA portal",
         "owner": "Finance Team", "reviewer": "Tony",
         "description": "Download customer WHT certificates from KRA portal, post to AX and match to specific invoices"
     },

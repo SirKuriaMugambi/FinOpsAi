@@ -1,23 +1,17 @@
 """
-WHT & WVAT Calculator — KRA Filing Preparation
-Chrysal is an appointed KRA Withholding VAT (WVAT) Agent, so TWO separate
-withholding obligations apply on every applicable vendor payment:
-
-1. Withholding VAT (WVAT) — 2% of the VAT-inclusive (gross) amount
-2. Withholding Income Tax (WHT) — 2% (general goods/contractual) or
-   5% (professional/consultancy) of the base amount (before VAT)
-
-Both are deducted from the gross invoice to arrive at the net payment to
-the vendor, and are filed to KRA separately:
-- WVAT → filed via the WVAT CSV/return
-- WHT → filed via the standard WHT CSV (2%) or Excel import (5%)
+WHT Calculator — KRA Filing Preparation
+Calculates Withholding Tax obligations on vendor payments and
+generates KRA-ready outputs:
+- CSV file for 2% WHT (general goods/contractual, bulk upload to KRA iTax portal)
+- Excel summary for 5% WHT (professional/consultancy, manual import)
+- Monthly filing summary with deadline tracking (Africa/Nairobi timezone)
 """
 
 import pandas as pd
 from datetime import datetime, date
 import pytz
 from typing import Optional
-from data.tax_config import get_wht_rate, WHT_FILING_DAY, WVAT_AGENT_RATE
+from data.tax_config import get_wht_rate, WHT_FILING_DAY
 from utils.currency import convert_to_kes, format_currency
 import io
 
@@ -27,7 +21,7 @@ KENYA_TZ = pytz.timezone("Africa/Nairobi")
 
 def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
     """
-    Calculate WVAT + WHT on a list of approved vendor payments.
+    Calculate WHT on a list of approved vendor payments.
     Each payment dict should have:
     - vendor_name, vendor_id, wht_type, amount (base/subtotal), vat_amount,
       currency, payment_ref, cu_invoice_number
@@ -38,7 +32,6 @@ def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
 
     total_wht_2pct_kes = 0
     total_wht_5pct_kes = 0
-    total_wvat_kes = 0
 
     for payment in payments:
         wht_type = payment.get("wht_type", "Exempt")
@@ -50,13 +43,10 @@ def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
         gross_kes = amount_kes + vat_kes
 
         wht_rate = get_wht_rate(wht_type)
-        # WHT (income tax) is calculated on the base amount (before VAT)
+        # WHT is calculated on the base amount (before VAT) — VAT is excluded from the WHT base
         wht_kes = amount_kes * wht_rate
-        # WVAT is calculated on the gross (VAT-inclusive) amount — Chrysal is an appointed WVAT Agent
-        wvat_kes = gross_kes * WVAT_AGENT_RATE if wht_rate > 0 else 0
-        total_withheld_kes = wht_kes + wvat_kes
-        # Net paid to vendor = Gross Invoice − WVAT − WHT
-        net_kes = gross_kes - total_withheld_kes
+        # Net paid to vendor = Gross Invoice − WHT (vendor still receives the VAT they charged)
+        net_kes = gross_kes - wht_kes
 
         entry = {
             "Vendor Name": payment.get("vendor_name", ""),
@@ -70,9 +60,6 @@ def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
             "Gross Invoice (KES)": round(gross_kes, 2),
             "WHT Rate": f"{wht_rate*100:.0f}%",
             "WHT Amount (KES)": round(wht_kes, 2),
-            "WVAT Rate": "2%",
-            "WVAT Amount (KES)": round(wvat_kes, 2),
-            "Total Withheld (KES)": round(total_withheld_kes, 2),
             "Net Paid to Vendor (KES)": round(net_kes, 2),
             "Currency": currency,
             "Original Amount": round(amount, 2),
@@ -82,11 +69,9 @@ def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
         if wht_rate == 0.02:
             results_2pct.append(entry)
             total_wht_2pct_kes += wht_kes
-            total_wvat_kes += wvat_kes
         elif wht_rate == 0.05:
             results_5pct.append(entry)
             total_wht_5pct_kes += wht_kes
-            total_wvat_kes += wvat_kes
         else:
             exempt.append(entry)
 
@@ -103,9 +88,9 @@ def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
     days_to_deadline = (deadline - today).days
     deadline_flag = None
     if days_to_deadline <= 3:
-        deadline_flag = f"🚨 URGENT: KRA WHT/WVAT filing due in {days_to_deadline} day(s) — {deadline.strftime('%d %B %Y')}"
+        deadline_flag = f"🚨 URGENT: KRA WHT filing due in {days_to_deadline} day(s) — {deadline.strftime('%d %B %Y')}"
     elif days_to_deadline <= 7:
-        deadline_flag = f"⚠️ KRA WHT/WVAT filing due in {days_to_deadline} days — {deadline.strftime('%d %B %Y')}"
+        deadline_flag = f"⚠️ KRA WHT filing due in {days_to_deadline} days — {deadline.strftime('%d %B %Y')}"
 
     return {
         "2pct_entries": results_2pct,
@@ -113,9 +98,8 @@ def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
         "exempt_entries": exempt,
         "total_wht_2pct_kes": round(total_wht_2pct_kes, 2),
         "total_wht_5pct_kes": round(total_wht_5pct_kes, 2),
-        "total_wvat_kes": round(total_wvat_kes, 2),
         "total_wht_kes": round(total_wht_2pct_kes + total_wht_5pct_kes, 2),
-        "total_withheld_kes": round(total_wht_2pct_kes + total_wht_5pct_kes + total_wvat_kes, 2),
+        "total_withheld_kes": round(total_wht_2pct_kes + total_wht_5pct_kes, 2),
         "deadline": deadline.strftime("%d %B %Y"),
         "days_to_deadline": days_to_deadline,
         "deadline_flag": deadline_flag,
@@ -147,33 +131,9 @@ def generate_kra_csv(entries_2pct: list) -> bytes:
     return kra_df.to_csv(index=False).encode("utf-8")
 
 
-def generate_wvat_csv(all_entries: list) -> bytes:
-    """Generate KRA WVAT CSV — filed separately from standard WHT, applies to all withheld payments."""
-    if not all_entries:
-        return b""
-    kra_cols = {
-        "Vendor PIN": "PIN of Withholdee",
-        "Vendor Name": "Name of Withholdee",
-        "CU Invoice Number": "CU Invoice Number",
-        "Invoice Date": "Invoice Date",
-        "Payment Date": "Date of Payment",
-        "Gross Invoice (KES)": "VAT Inclusive Amount",
-        "WVAT Amount (KES)": "VAT Withheld",
-        "Payment Ref": "Payment Reference",
-    }
-    df = pd.DataFrame(all_entries)
-    kra_df = pd.DataFrame()
-    for our_col, kra_col in kra_cols.items():
-        if our_col in df.columns:
-            kra_df[kra_col] = df[our_col]
-    kra_df["WVAT Rate"] = "2%"
-    return kra_df.to_csv(index=False).encode("utf-8")
-
-
 def generate_wht_excel(result: dict) -> bytes:
-    """Generate Excel workbook with 2% WHT, 5% WHT, and WVAT on separate sheets."""
+    """Generate Excel workbook with 2% and 5% WHT on separate sheets."""
     output = io.BytesIO()
-    all_entries = result["2pct_entries"] + result["5pct_entries"]
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         if result["2pct_entries"]:
             pd.DataFrame(result["2pct_entries"]).to_excel(
@@ -183,20 +143,16 @@ def generate_wht_excel(result: dict) -> bytes:
             pd.DataFrame(result["5pct_entries"]).to_excel(
                 writer, sheet_name="5% WHT - Professional", index=False
             )
-        if all_entries:
-            pd.DataFrame(all_entries).to_excel(
-                writer, sheet_name="2% WVAT - All Payments", index=False
-            )
         summary_data = {
             "Item": [
-                "Total 2% WHT (KES)", "Total 5% WHT (KES)", "Total WVAT 2% (KES)",
-                "Total WHT Payable (KES)", "Total Withheld Overall (KES)",
-                "KRA Filing Deadline", "Days Remaining", "Generated At (Nairobi Time)"
+                "Total 2% WHT (KES)", "Total 5% WHT (KES)",
+                "Total WHT Payable (KES)", "KRA Filing Deadline", "Days Remaining",
+                "Generated At (Nairobi Time)"
             ],
             "Value": [
-                result["total_wht_2pct_kes"], result["total_wht_5pct_kes"], result["total_wvat_kes"],
-                result["total_wht_kes"], result["total_withheld_kes"],
-                result["deadline"], result["days_to_deadline"], result.get("current_time_nairobi", "")
+                result["total_wht_2pct_kes"], result["total_wht_5pct_kes"],
+                result["total_wht_kes"], result["deadline"], result["days_to_deadline"],
+                result.get("current_time_nairobi", "")
             ]
         }
         pd.DataFrame(summary_data).to_excel(

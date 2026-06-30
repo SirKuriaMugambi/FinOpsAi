@@ -238,11 +238,10 @@ def _render_invoice_form(extracted, vendors, vendor_names, rates, current_user, 
         if result.get("kra_rate_warning"):
             st.warning(result["kra_rate_warning"])
 
-        col_a, col_b, col_c, col_g = st.columns(4)
+        col_a, col_b, col_c = st.columns(3)
         col_a.metric("Net Amount", format_currency(subtotal, currency))
         col_b.metric(f"VAT ({result['vat_rate_pct']})", format_currency(result["vat_amount"], currency))
         col_c.metric(f"WHT ({result['wht_rate_pct']})", format_currency(result["wht_amount"], currency))
-        col_g.metric(f"WVAT ({result['wvat_rate_pct']})", format_currency(result["wvat_amount"], currency))
 
         col_d, col_e, col_f = st.columns(3)
         col_d.metric("Net Payable (KES)", format_currency(result["net_payable_kes"]))
@@ -266,7 +265,6 @@ Currency       : {currency}
 Net Amount     : {subtotal:,.2f} {currency}
 VAT ({result['vat_rate_pct']})    : {result['vat_amount']:,.2f} {currency}
 WHT ({result['wht_rate_pct']})    : {result['wht_amount']:,.2f} {currency}
-WVAT ({result['wvat_rate_pct']})   : {result['wvat_amount']:,.2f} {currency}
 Net Payable    : {result['net_payable_kes']:,.2f} KES
 Ledger Account : {ledger_code} — {CHART_OF_ACCOUNTS.get(ledger_code,{}).get('name','')}
 Department     : {dept_code}
