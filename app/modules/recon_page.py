@@ -7,14 +7,16 @@ from utils.currency import format_currency, now_nairobi
 
 
 SAMPLE_INVOICES = pd.DataFrame([
-    {"Vendor": "Bayer East Africa Ltd", "Invoice No": "BAY-2026-001", "Date": "01/05/2026", "Amount": 450000, "Currency": "KES", "Status": "Outstanding"},
-    {"Vendor": "Bayer East Africa Ltd", "Invoice No": "BAY-2026-002", "Date": "15/05/2026", "Amount": 230000, "Currency": "KES", "Status": "Outstanding"},
+    # Genuinely outstanding — no payment made yet, these need remittance advice generated
+    {"Vendor": "Bayer East Africa Ltd", "Invoice No": "BAY-2026-002", "Date": "15/06/2026", "Amount": 230000, "Currency": "KES", "Status": "Outstanding"},
+    {"Vendor": "Deloitte East Africa", "Invoice No": "DEL-2026-04", "Date": "01/06/2026", "Amount": 320000, "Currency": "KES", "Status": "Outstanding"},
+    {"Vendor": "Kenya Power & Lighting", "Invoice No": "KP-884", "Date": "01/06/2026", "Amount": 118000, "Currency": "KES", "Status": "Outstanding"},
+    # Already paid last month — included to demonstrate matching against a historical payment record
     {"Vendor": "DHL Express Kenya", "Invoice No": "DHL-8821", "Date": "10/05/2026", "Amount": 85000, "Currency": "KES", "Status": "Outstanding"},
-    {"Vendor": "Deloitte East Africa", "Invoice No": "DEL-2026-04", "Date": "01/04/2026", "Amount": 320000, "Currency": "KES", "Status": "Outstanding"},
 ])
 
 SAMPLE_PAYMENTS = pd.DataFrame([
-    {"Vendor": "Bayer East Africa Ltd", "Payment Ref": "PAY-001", "Date": "20/05/2026", "Amount Paid": 450000, "Currency": "KES"},
+    # Only DHL has a matching payment — demonstrates a confirmed/settled match for the audit record
     {"Vendor": "DHL Express Kenya", "Payment Ref": "PAY-002", "Date": "20/05/2026", "Amount Paid": 85000, "Currency": "KES"},
 ])
 
@@ -22,6 +24,7 @@ SAMPLE_PAYMENTS = pd.DataFrame([
 def render_recon_page():
     st.title("🔄 AP Reconciliation")
     st.caption("Upload your outstanding invoices and payment records. The app matches payments to invoices, flags unmatched items, and generates remittance advice for your vendors.")
+    st.info("📋 **How this works:** Invoices below are genuinely unpaid until a matching payment record exists. Bayer, Deloitte and Kenya Power have NO payment yet — these are real outstanding items ready for remittance advice generation, approval, and payment. DHL already has a historical payment on record — the recon below will show it as ✅ Matched, demonstrating how a settled invoice is confirmed and archived after payment.")
     st.divider()
 
     rates = st.session_state.rates
