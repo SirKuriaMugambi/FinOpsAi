@@ -245,8 +245,8 @@ def render_bank_recon_page():
         matched = recon["matched"]
         unmatched_bank = recon["unmatched_bank"]
         unmatched_ax = recon["unmatched_ax"]
-        stored_bank_df = recon.get("bank_df", active_bank_df or SAMPLE_BANK_STATEMENT)
-        stored_ax_df = recon.get("ax_df", active_ax_df or SAMPLE_AX_LEDGER)
+        stored_bank_df = recon.get("bank_df") if recon.get("bank_df") is not None else SAMPLE_BANK_STATEMENT
+        stored_ax_df = recon.get("ax_df") if recon.get("ax_df") is not None else SAMPLE_AX_LEDGER
 
         total_matched = sum(r["Amount (KES)"] for r in matched)
         total_unmatched_bank = sum(r["Amount (KES)"] for r in unmatched_bank)

@@ -79,7 +79,47 @@ def render_financial_statements_page():
         )
         tb = None
         if tb_file:
-            tb = pd.read_excel(tb_file) if tb_file.name.endswith(("xlsx","xls")) else pd.read_csv(tb_file)
+            try:
+                if tb_file.name.endswith(("xlsx","xls")):
+                    temp_df = pd.read_excel(tb_file, header=0)
+                    # Check if first row looks like real headers
+                    cols_lower = [str(c).lower().strip() for c in temp_df.columns]
+                    if not any("account" in c for c in cols_lower):
+                        tb_file.seek(0)
+                        temp_df = pd.read_excel(tb_file, skiprows=2, header=0)
+                    tb = temp_df
+                else:
+                    tb = pd.read_csv(tb_file)
+
+                # Normalize column names — handle variations
+                tb.columns = [str(c).strip() for c in tb.columns]
+                rename_map = {}
+                for c in tb.columns:
+                    cl = c.lower().strip()
+                    if cl in ("account", "account no", "account number", "account code", "ledger"):
+                        rename_map[c] = "Account"
+                    elif cl in ("name", "account name", "description"):
+                        rename_map[c] = "Name"
+                    elif cl in ("debit", "dr"):
+                        rename_map[c] = "Debit"
+                    elif cl in ("credit", "cr"):
+                        rename_map[c] = "Credit"
+                tb = tb.rename(columns=rename_map)
+
+                # Clean numeric columns
+                for col in ["Debit", "Credit"]:
+                    if col in tb.columns:
+                        tb[col] = pd.to_numeric(
+                            tb[col].astype(str).str.replace(",", ""), errors="coerce"
+                        ).fillna(0)
+
+                missing = [c for c in ["Account", "Debit", "Credit"] if c not in tb.columns]
+                if missing:
+                    st.error(f"⚠️ Could not find required column(s): {', '.join(missing)}. Found columns: {list(tb.columns)}")
+                    tb = None
+            except Exception as e:
+                st.error(f"Error reading trial balance: {e}")
+                tb = None
 
     if tb is not None:
         st.dataframe(tb, use_container_width=True)
