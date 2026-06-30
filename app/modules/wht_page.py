@@ -14,7 +14,7 @@ KENYA_TZ = pytz.timezone("Africa/Nairobi")
 
 def render_wht_page():
     st.title("🧾 WHT & WVAT Calculator — KRA Filing Prep")
-    st.caption("Chrysal is an appointed KRA Withholding VAT (WVAT) Agent. Both Withholding Income Tax (3%/5%) and Withholding VAT (2% of gross) are calculated and filed separately — by the 20th of every month.")
+    st.caption("Chrysal is an appointed KRA Withholding VAT (WVAT) Agent. Both Withholding Income Tax (2%/5%) and Withholding VAT (2% of gross) are calculated and filed separately — by the 20th of every month.")
     nairobi_now = datetime.now(KENYA_TZ).strftime("%A, %d %B %Y — %H:%M:%S %Z")
     st.caption(f"🕒 Current time (Africa/Nairobi): **{nairobi_now}**")
     st.divider()
@@ -96,24 +96,24 @@ def render_wht_page():
 
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Withheld (KES)", format_currency(result["total_withheld_kes"]))
-        col2.metric("3% WHT — General Goods (KES)", format_currency(result["total_wht_3pct_kes"]))
+        col2.metric("2% WHT — General Goods (KES)", format_currency(result["total_wht_2pct_kes"]))
         col3.metric("5% WHT — Professional (KES)", format_currency(result["total_wht_5pct_kes"]))
         col4.metric("2% WVAT — All Payments (KES)", format_currency(result["total_wvat_kes"]))
 
         st.divider()
 
-        if result["3pct_entries"]:
-            st.subheader("3% WHT — General Goods/Contractual (CSV Upload to KRA)")
-            st.dataframe(pd.DataFrame(result["3pct_entries"]), use_container_width=True)
-            csv_bytes = generate_kra_csv(result["3pct_entries"])
-            st.download_button("⬇️ Download KRA CSV (3% WHT)", csv_bytes,
-                               file_name="KRA_WHT_3pct.csv", mime="text/csv")
+        if result["2pct_entries"]:
+            st.subheader("2% WHT — General Goods/Contractual (CSV Upload to KRA)")
+            st.dataframe(pd.DataFrame(result["2pct_entries"]), use_container_width=True)
+            csv_bytes = generate_kra_csv(result["2pct_entries"])
+            st.download_button("⬇️ Download KRA CSV (2% WHT)", csv_bytes,
+                               file_name="KRA_WHT_2pct.csv", mime="text/csv")
 
         if result["5pct_entries"]:
             st.subheader("5% WHT — Professional/Consultancy (Excel Import to KRA)")
             st.dataframe(pd.DataFrame(result["5pct_entries"]), use_container_width=True)
 
-        all_entries = result["3pct_entries"] + result["5pct_entries"]
+        all_entries = result["2pct_entries"] + result["5pct_entries"]
         if all_entries:
             st.subheader("2% WVAT — All Withheld Payments (Separate KRA Filing)")
             st.caption("Chrysal's WVAT Agent obligation applies to every payment above, calculated on the VAT-inclusive amount and filed separately from WHT.")

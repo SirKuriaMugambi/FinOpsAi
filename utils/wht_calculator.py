@@ -4,13 +4,13 @@ Chrysal is an appointed KRA Withholding VAT (WVAT) Agent, so TWO separate
 withholding obligations apply on every applicable vendor payment:
 
 1. Withholding VAT (WVAT) — 2% of the VAT-inclusive (gross) amount
-2. Withholding Income Tax (WHT) — 3% (general goods/contractual) or
+2. Withholding Income Tax (WHT) — 2% (general goods/contractual) or
    5% (professional/consultancy) of the base amount (before VAT)
 
 Both are deducted from the gross invoice to arrive at the net payment to
 the vendor, and are filed to KRA separately:
 - WVAT → filed via the WVAT CSV/return
-- WHT → filed via the standard WHT CSV (3%) or Excel import (5%)
+- WHT → filed via the standard WHT CSV (2%) or Excel import (5%)
 """
 
 import pandas as pd
@@ -32,11 +32,11 @@ def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
     - vendor_name, vendor_id, wht_type, amount (base/subtotal), vat_amount,
       currency, payment_ref, cu_invoice_number
     """
-    results_3pct = []   # General goods/contractual WHT (3%) → CSV upload
+    results_2pct = []   # General goods/contractual WHT (2%) → CSV upload
     results_5pct = []   # Professional/consultancy WHT (5%) → Excel import
     exempt = []
 
-    total_wht_3pct_kes = 0
+    total_wht_2pct_kes = 0
     total_wht_5pct_kes = 0
     total_wvat_kes = 0
 
@@ -79,9 +79,9 @@ def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
             "KRA Rate Used": payment.get("kra_rate_used", "Market rate"),
         }
 
-        if wht_rate == 0.03:
-            results_3pct.append(entry)
-            total_wht_3pct_kes += wht_kes
+        if wht_rate == 0.02:
+            results_2pct.append(entry)
+            total_wht_2pct_kes += wht_kes
             total_wvat_kes += wvat_kes
         elif wht_rate == 0.05:
             results_5pct.append(entry)
@@ -108,14 +108,14 @@ def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
         deadline_flag = f"⚠️ KRA WHT/WVAT filing due in {days_to_deadline} days — {deadline.strftime('%d %B %Y')}"
 
     return {
-        "3pct_entries": results_3pct,
+        "2pct_entries": results_2pct,
         "5pct_entries": results_5pct,
         "exempt_entries": exempt,
-        "total_wht_3pct_kes": round(total_wht_3pct_kes, 2),
+        "total_wht_2pct_kes": round(total_wht_2pct_kes, 2),
         "total_wht_5pct_kes": round(total_wht_5pct_kes, 2),
         "total_wvat_kes": round(total_wvat_kes, 2),
-        "total_wht_kes": round(total_wht_3pct_kes + total_wht_5pct_kes, 2),
-        "total_withheld_kes": round(total_wht_3pct_kes + total_wht_5pct_kes + total_wvat_kes, 2),
+        "total_wht_kes": round(total_wht_2pct_kes + total_wht_5pct_kes, 2),
+        "total_withheld_kes": round(total_wht_2pct_kes + total_wht_5pct_kes + total_wvat_kes, 2),
         "deadline": deadline.strftime("%d %B %Y"),
         "days_to_deadline": days_to_deadline,
         "deadline_flag": deadline_flag,
@@ -123,9 +123,9 @@ def calculate_wht_for_payments(payments: list, rates: dict) -> dict:
     }
 
 
-def generate_kra_csv(entries_3pct: list) -> bytes:
-    """Generate KRA iTax-compatible CSV for 3% WHT (general goods/contractual) bulk upload."""
-    if not entries_3pct:
+def generate_kra_csv(entries_2pct: list) -> bytes:
+    """Generate KRA iTax-compatible CSV for 2% WHT (general goods/contractual) bulk upload."""
+    if not entries_2pct:
         return b""
     kra_cols = {
         "Vendor PIN": "PIN of Withholdee",
@@ -137,12 +137,12 @@ def generate_kra_csv(entries_3pct: list) -> bytes:
         "WHT Amount (KES)": "Tax Withheld",
         "Payment Ref": "Payment Reference",
     }
-    df = pd.DataFrame(entries_3pct)
+    df = pd.DataFrame(entries_2pct)
     kra_df = pd.DataFrame()
     for our_col, kra_col in kra_cols.items():
         if our_col in df.columns:
             kra_df[kra_col] = df[our_col]
-    kra_df["WHT Rate"] = "3%"
+    kra_df["WHT Rate"] = "2%"
     kra_df["Nature of Payment"] = "General Goods/Contractual Payments"
     return kra_df.to_csv(index=False).encode("utf-8")
 
@@ -171,13 +171,13 @@ def generate_wvat_csv(all_entries: list) -> bytes:
 
 
 def generate_wht_excel(result: dict) -> bytes:
-    """Generate Excel workbook with 3% WHT, 5% WHT, and WVAT on separate sheets."""
+    """Generate Excel workbook with 2% WHT, 5% WHT, and WVAT on separate sheets."""
     output = io.BytesIO()
-    all_entries = result["3pct_entries"] + result["5pct_entries"]
+    all_entries = result["2pct_entries"] + result["5pct_entries"]
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        if result["3pct_entries"]:
-            pd.DataFrame(result["3pct_entries"]).to_excel(
-                writer, sheet_name="3% WHT - General Goods", index=False
+        if result["2pct_entries"]:
+            pd.DataFrame(result["2pct_entries"]).to_excel(
+                writer, sheet_name="2% WHT - General Goods", index=False
             )
         if result["5pct_entries"]:
             pd.DataFrame(result["5pct_entries"]).to_excel(
@@ -189,12 +189,12 @@ def generate_wht_excel(result: dict) -> bytes:
             )
         summary_data = {
             "Item": [
-                "Total 3% WHT (KES)", "Total 5% WHT (KES)", "Total WVAT 2% (KES)",
+                "Total 2% WHT (KES)", "Total 5% WHT (KES)", "Total WVAT 2% (KES)",
                 "Total WHT Payable (KES)", "Total Withheld Overall (KES)",
                 "KRA Filing Deadline", "Days Remaining", "Generated At (Nairobi Time)"
             ],
             "Value": [
-                result["total_wht_3pct_kes"], result["total_wht_5pct_kes"], result["total_wvat_kes"],
+                result["total_wht_2pct_kes"], result["total_wht_5pct_kes"], result["total_wvat_kes"],
                 result["total_wht_kes"], result["total_withheld_kes"],
                 result["deadline"], result["days_to_deadline"], result.get("current_time_nairobi", "")
             ]

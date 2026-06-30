@@ -220,13 +220,13 @@ def process_invoice(
         subtotal = total - vat_amount_original
 
     # VAT calculation
-    vat_treatment = vendor.get("vat_treatment", "General Goods/Contractual (3%)")
+    vat_treatment = vendor.get("vat_treatment", "Standard (16%)")
     vat_rate = get_vat_rate(vat_treatment)
     calculated_vat = subtotal * vat_rate
     invoice_total = subtotal + calculated_vat
 
     # WHT (income tax) calculation — on subtotal/base, not including VAT
-    wht_type = vendor.get("wht_type", "General Goods/Contractual (3%)")
+    wht_type = vendor.get("wht_type", "General Goods/Contractual (2%)")
     wht_rate = get_wht_rate(wht_type)
     wht_amount = subtotal * wht_rate
 

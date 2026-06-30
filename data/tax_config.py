@@ -15,12 +15,12 @@ vendor payment, calculated independently and remitted separately:
    e.g. Base 4,000 + VAT 640 = Gross 4,640 → WVAT = 4,640 × 2% = 92.80
 
 2. WITHHOLDING INCOME TAX (WHT) — on the BASE amount (before VAT), rate depends on type:
-   - General goods / contractual work: 3% of base
+   - General goods / contractual work: 2% of base (Chrysal's standard rate)
    - Professional / consultancy services: 5% of base
-   e.g. Base 4,000 → WHT = 4,000 × 3% = 120 (general) or 4,000 × 5% = 200 (professional)
+   e.g. Base 4,000 → WHT = 4,000 × 2% = 80 (general) or 4,000 × 5% = 200 (professional)
 
 TOTAL WITHHELD = WVAT + WHT (both deducted from the gross payment to the vendor)
-e.g. General goods: 92.80 + 120 = 212.80 total withheld
+e.g. General goods: 92.80 + 80 = 172.80 total withheld
 e.g. Professional services: 92.80 + 200 = 292.80 total withheld
 
 Net payment to vendor = Gross Invoice − WVAT − WHT
@@ -62,7 +62,7 @@ VAT_TREATMENTS = {
 
 # --- WHT Rate Options ---
 WHT_TYPES = {
-    "General Goods/Contractual (3%)": 0.03,
+    "General Goods/Contractual (2%)": 0.02,
     "Professional/Consultancy (5%)": 0.05,
     "Exempt": 0.00,
 }
@@ -85,7 +85,7 @@ DEFAULT_VENDORS = [
         "name": "Bayer East Africa Ltd",
         "type": "Supplier",
         "vat_treatment": "Standard (16%)",
-        "wht_type": "General Goods/Contractual (3%)",
+        "wht_type": "General Goods/Contractual (2%)",
         "currency": "KES",
         "default_ledger": "5000",
         "default_dept": "OPS",
@@ -97,7 +97,7 @@ DEFAULT_VENDORS = [
         "name": "DHL Express Kenya",
         "type": "Supplier",
         "vat_treatment": "Standard (16%)",
-        "wht_type": "General Goods/Contractual (3%)",
+        "wht_type": "General Goods/Contractual (2%)",
         "currency": "KES",
         "default_ledger": "5300",
         "default_dept": "OPS",
@@ -121,7 +121,7 @@ DEFAULT_VENDORS = [
         "name": "Kenya Power & Lighting",
         "type": "Supplier",
         "vat_treatment": "Standard (16%)",
-        "wht_type": "General Goods/Contractual (3%)",
+        "wht_type": "General Goods/Contractual (2%)",
         "currency": "KES",
         "default_ledger": "6200",
         "default_dept": "ADM",
@@ -133,7 +133,7 @@ DEFAULT_VENDORS = [
         "name": "Safaricom PLC",
         "type": "Supplier",
         "vat_treatment": "Standard (16%)",
-        "wht_type": "General Goods/Contractual (3%)",
+        "wht_type": "General Goods/Contractual (2%)",
         "currency": "KES",
         "default_ledger": "6300",
         "default_dept": "ADM",
@@ -157,7 +157,7 @@ DEFAULT_VENDORS = [
         "name": "Export Supplies International",
         "type": "Supplier",
         "vat_treatment": "Zero Rated (0%)",
-        "wht_type": "General Goods/Contractual (3%)",
+        "wht_type": "General Goods/Contractual (2%)",
         "currency": "USD",
         "default_ledger": "5100",
         "default_dept": "OPS",
