@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/schemas/components.schema.json",
+  "title": "shadcn/ui components.json",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "style": {
+      "type": "string"
+    },
+    "rsc": {
+      "type": "boolean"
+    },
+    "tsx": {
+      "type": "boolean"
+    },
+    "tailwind": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "type": "string"
+        },
+        "css": {
+          "type": "string"
+        },
+        "baseColor": {
+          "type": "string"
+        },
+        "cssVariables": {
+          "type": "boolean"
+        },
+        "prefix": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "iconLibrary": {
+      "type": "string"
+    },
+    "rtl": {
+      "type": "boolean"
+    },
+    "aliases": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "menuColor": {
+      "type": "string"
+    },
+    "menuAccent": {
+      "type": "string"
+    },
+    "registries": {
+      "type": "object"
+    }
+  },
+  "required": ["$schema", "style", "rsc", "tsx", "tailwind", "aliases"]
+}
