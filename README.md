@@ -23,24 +23,80 @@ Every one of those steps is manual, error-prone, and time-consuming. FinOps AI a
 ---
 
 ## What it does
+## Modules
 
-**📄 Invoice Processor**
-Upload a PDF or Excel invoice (or enter manually) → app extracts vendor, amounts, dates → confirms VAT treatment from vendor master → calculates WHT → flags mismatches → generates a posting-ready summary for AX. For foreign currency invoices, prompts for KRA's official exchange rate for the invoice date (used exclusively for WHT — the compliance-correct approach).
+FinOps AI replaces 16 manual, error-prone steps in Chrysal International Africa's monthly finance cycle with automated, KRA-compliant workflows.
 
-**🔄 AP Reconciliation**
-Upload outstanding invoices + payment records → app matches payments to invoices (exact match and multi-invoice combinations) → flags unmatched items → generates vendor remittance advice documents ready for Finance Manager approval.
+**1. Invoice Processor**
+- Problem: Invoices arrive in inconsistent formats and get keyed in manually, causing delays and data entry errors.
+- Fix: Automatically extracts and processes invoice data on intake, ready for downstream matching and approval.
 
-**🧾 WHT Calculator & KRA Filing Prep**
-Calculates 2% WHT (suppliers) and 5% WHT (consultants) on approved payments, using the correct KRA rate per invoice. Generates a KRA iTax-compatible CSV for 2% bulk upload and a formatted Excel workbook for 5% manual import. Tracks the 20th-of-month filing deadline and raises alerts as it approaches.
+**2. 3-Way Matching**
+- Problem: Manually cross-checking purchase orders, invoices, and delivery notes is slow and misses discrepancies.
+- Fix: Automatically matches PO, invoice, and delivery note line items, flagging mismatches before payment.
 
-**💰 AR Receipting & Customer WHT**
-Calculates VAT and customer WHT (2% of 16% VAT) on customer invoices. Matches receipts to outstanding AR invoices, tracks KRA WHT certificate status per invoice, and generates a daily receipting summary.
+**3. AP Reconciliation**
+- Problem: Accounts payable balances drift from vendor statements without anyone catching it until month-end.
+- Fix: Reconciles AP ledger against vendor records continuously, surfacing discrepancies early.
 
-**🏠 Management Dashboard**
-Aggregates all modules: invoice processing status, WHT obligations this month, reconciliation summary, outstanding AR, KRA filing deadline countdown.
+**4. Bank Reconciliation**
+- Problem: Matching bank statement lines to the general ledger by hand is tedious and error-prone.
+- Fix: Automates line-item matching between bank statements and the ledger, highlighting unmatched entries.
 
-**⚙️ Vendor Master**
-Manage vendor profiles — name, type, VAT treatment (zero rated / exempt / 16% / 5%), WHT rate (2% / 5% / both), default currency. Drives all tax calculations throughout the app.
+**5. WHT Calculator**
+- Problem: Withholding tax rates differ by transaction type (2% general goods, 5% professional/consultancy), and manual calculation risks KRA non-compliance.
+- Fix: Automatically applies the correct WHT rate per transaction and generates KRA-compliant filing output.
+
+**6. AR Receipting**
+- Problem: Matching customer receipts to invoices — and correctly applying WVAT (2% of taxable value) — is a manual, error-prone process.
+- Fix: Automates receipt-to-invoice matching with built-in WVAT calculation.
+
+**7. Intercompany**
+- Problem: Intercompany transactions get recorded inconsistently across entities, complicating consolidation.
+- Fix: Tracks and reconciles intercompany transactions in one place.
+
+**8. Payroll**
+- Problem: Payroll processing involves multiple manual calculations and compliance checks each month.
+- Fix: Automates payroll computation and processing end-to-end.
+
+**9. Budget vs Actual**
+- Problem: Spotting budget overruns requires manually pulling and comparing numbers across spreadsheets.
+- Fix: Automatically compares actuals to budget by cost centre and flags variances.
+
+**10. Financial Statements**
+- Problem: Compiling financial statements manually each period is time-consuming and error-prone.
+- Fix: Auto-generates financial statements directly from ledger data.
+
+**11. Month-End Checklist**
+- Problem: Month-end close tasks get missed or done out of order without a single source of truth.
+- Fix: Tracks every month-end close task and its status in one checklist.
+
+**12. Cash Flow Forecaster**
+- Problem: Without a forward view of cash position, the business risks liquidity surprises.
+- Fix: Projects future cash flow based on current AP/AR and payment patterns.
+
+**13. Audit Trail**
+- Problem: Tracing who changed what, and when, is difficult without a centralized log.
+- Fix: Logs every action across the system for full auditability.
+
+**14. Document Store**
+- Problem: Finance documents scatter across emails, drives, and desktops, making retrieval slow.
+- Fix: Centralizes all finance documents in one searchable repository.
+
+**15. Vendor Master**
+- Problem: Inconsistent or outdated vendor data leads to payment errors and duplicate records.
+- Fix: Maintains a single, clean source of vendor data across the system.
+
+**16. Chart of Accounts**
+- Problem: Inconsistent account coding across teams causes reporting and reconciliation errors.
+- Fix: Centralizes and standardizes the chart of accounts used across all modules.
+
+All modules are built on real Chrysal cost centres, approval chains, and vendor master data, with KRA tax compliance logic (WHT and WVAT) validated throughout.
+
+
+
+
+
 
 ---
 
