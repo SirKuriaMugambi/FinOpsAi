@@ -163,20 +163,36 @@ FinOpsAi/
 
 **Purpose**: High-level financial overview and KPI metrics
 
-**Displays**:
-- Total AP outstanding (by vendor, currency)
-- Total AR outstanding (by customer, currency)
-- Cash position (net of payables/receivables)
-- WHT filing status and deadline countdown
-- Budget vs actual variance summary
-- Key financial ratios (if available)
-- Recent transactions summary
+**Sample Data Pre-loading**:
+The dashboard automatically pre-loads sample data on first visit so users see realistic metrics immediately (prevents "empty" dashboard on first load):
+- 3 sample processed invoices (Bayer, DHL, Deloitte) with realistic amounts
+- 3 sample WHT payment entries with 2% and 5% rates
+- Dashboard never shows empty state
 
-**User Flow**:
-1. User logs in and lands on dashboard
-2. Views at-a-glance financial snapshot
-3. Clicks into modules for detailed work
-4. Returns to dashboard to check overall impact
+**Displays**:
+- **Metrics**: Total invoices processed, WHT entries flagged, reconciled items, AR receipts matched
+- **Invoice Summary Pie Chart**: "Ready to Post" vs "Flagged for Review"
+- **Total Values**:
+  - Total invoice value (KES)
+  - Total WHT withheld (KES)
+- **WHT Filing Status**:
+  - Days until KRA deadline (20th of month)
+  - Status flags (🚨 URGENT if < 3 days, ⚠️ if < 7 days)
+  - Displays filing deadline date in Nairobi timezone
+- **AP Summary** (if available):
+  - Outstanding AP by vendor
+  - Days overdue metrics
+- **AR Summary** (if available):
+  - Outstanding AR by customer
+  - Days outstanding metrics
+  - WHT certificates pending/received
+
+**Data Flow**: 
+Reads from `st.session_state`:
+- `processed_invoices` → Invoice metrics
+- `wht_payments` → WHT summary
+- `recon_result` → AP matching metrics
+- `ar_result` → AR matching metrics
 
 ---
 
@@ -970,6 +986,40 @@ payment = {
 
 ## Key Features & Compliance
 
+### Invoice Validation & Flagging System
+
+One of the critical undocumented features is the automatic validation and warning system built into invoice processing:
+
+**Tax Validation Warnings**:
+
+1. **VAT Amount Mismatch** ⚠️
+   - System calculates VAT based on vendor's VAT treatment
+   - If calculated VAT differs from invoice VAT by > 1 KES: flags warning
+   - User cannot post until issue resolved
+   - Example: "VAT mismatch: Invoice shows 16,000 KES but 16% rate gives 15,920 KES. Verify before posting."
+
+2. **Foreign Currency KRA Rate Missing** ⚠️
+   - For USD/EUR/GBP invoices: if no KRA official rate entered, flags warning
+   - System calculates WHT using market rate BUT notes this is non-compliant
+   - User must manually enter KRA's official exchange rate for invoice date
+   - Example: "⚠️ KRA rate not entered for this USD invoice. WHT calculated using market rate (KES 129.50 per USD). For compliance, enter KRA's official rate for 2026-06-15."
+
+3. **Posting Ready Flag**:
+   - `posting_ready: true` → All validations passed, safe to post
+   - `posting_ready: false` → Tax warnings flagged, user must resolve before posting
+
+**Implementation**: All validation happens in `process_invoice()` function, which returns:
+```python
+return {
+    ...
+    "tax_flag": str or None,        # Warning message if issue detected
+    "kra_rate_warning": str or None, # Warning if no KRA rate for FX invoice
+    "posting_ready": bool,           # False if any warnings
+}
+```
+
+Users see these warnings in the UI and cannot post flagged invoices until warnings are addressed.
+
 ### 1. KRA Tax Compliance
 
 **VAT Management**:
@@ -1337,6 +1387,66 @@ APPROVAL_CHAIN = {
 
 ---
 
+## External APIs & Integrations
+
+### Exchange Rate API (exchangerate-api.com)
+
+**Purpose**: Fetch live KES exchange rates for USD, EUR, GBP
+
+**Endpoint**: `https://api.exchangerate-api.com/v4/latest/KES`
+
+**Features**:
+- No API key required (free tier)
+- 5-second timeout (prevents app hanging on network issues)
+- Returns rates for 150+ currencies
+- Conversion: Converts "rates from KES" to "rates to KES" (reciprocal)
+
+**Fallback Strategy**:
+- If live API fails: Uses cached rates (hardcoded mid-2026 estimates)
+- App never crashes due to network error
+- Returns `(rates, is_live: bool)` tuple so users know if rates are live or cached
+
+**Used By**:
+- All currency conversion functions
+- Dashboard rate display (shows "🟢 Live" or "🔵 Cached" status)
+- Sidebar "Refresh rates" button
+
+**Example Response**:
+```json
+{
+  "rates": {
+    "USD": 0.0077,
+    "EUR": 0.0071,
+    "GBP": 0.0061,
+    ...
+  }
+}
+```
+(System converts these to KES equivalents: 1 USD = 1/0.0077 = 129.87 KES)
+
+### Document Processing APIs
+
+**PDF Extraction**: pdfplumber library
+- Handles text extraction from PDFs
+- Supports table extraction for line items
+- Used for: Invoice processing
+
+**Excel Extraction**: openpyxl library
+- Reads Excel workbooks
+- Converts sheets to DataFrames
+- Used for: Invoice processing, bank statements, budgets
+
+### Potential Future Integrations
+
+While not currently implemented, the architecture supports:
+- **Microsoft Dynamics AX API**: For posting approved invoices directly to GL
+- **KRA e-Filing API**: For automated WHT submission (currently manual)
+- **Bank API**: For automated bank statement retrieval
+- **Customer portal**: For AR invoice submission and payment tracking
+- **Email service**: For approval notifications
+
+---
+
 ## Configuration & Settings
 
 ### Tax Configuration (`data/tax_config.py`)
@@ -1430,20 +1540,41 @@ def get_rates() -> tuple:
     """
     Returns (rates_dict, is_live: bool).
     Tries live rates from exchangerate-api.com, falls back to cached.
+    API: https://api.exchangerate-api.com/v4/latest/KES (no API key required)
+    Timeout: 5 seconds
+    Fallback rates (cached): USD 129.50, EUR 140.20, GBP 164.80 (mid-2026 estimates)
     """
-    # Implementation: Fetches live or returns cached rates
+    # If live fetch succeeds: returns ({"USD": 129.50, "EUR": 140.20, ...}, True)
+    # If live fetch fails: returns (FALLBACK_RATES_TO_KES, False)
 
-def convert_to_kes(amount: float, currency: str, rates: dict) -> float:
-    """Convert any supported currency to KES."""
+def convert_to_kes(amount: float, currency: str, rates: Optional[dict] = None) -> float:
+    """
+    Convert any supported currency to KES.
+    If rates not provided, fetches automatically.
+    Handles KES (returns amount unchanged).
+    """
     # Implementation: amount * rate[currency]
 
-def format_currency(amount: float, currency: str, compact: bool) -> str:
-    """Format currency for display (compact mode avoids Streamlit truncation)."""
-    # Implementation: Formats as "KES 1.23M" or "KES 1,000.00"
+def format_currency(amount: float, currency: str, compact: bool = True) -> str:
+    """
+    Format currency for display.
+    Compact mode (default): Uses M/K suffixes to avoid Streamlit metric truncation
+    Examples:
+    - 1,234,567 KES with compact=True → "KES 1.23M"
+    - 50,000 KES with compact=True → "KES 50.0K"  
+    - 1,000 KES with compact=False → "KES 1,000.00"
+    - 1,500.50 USD → "$ 1,500.50"
+    """
 
 def now_nairobi() -> datetime:
-    """Current time in Africa/Nairobi timezone."""
-    # Implementation: datetime.now(timezone("Africa/Nairobi"))
+    """Return current datetime in Africa/Nairobi timezone."""
+    # Used app-wide for consistent timestamps in all audit logs and calculations
+
+def fetch_live_rates() -> Optional[dict]:
+    """
+    Fetch live KES exchange rates from exchangerate-api.com.
+    Returns {currency: rate_to_KES} or None if fails.
+    """
 ```
 
 ### Invoice Engine (`utils/invoice_engine.py`)
@@ -1451,16 +1582,117 @@ def now_nairobi() -> datetime:
 **Key Functions**:
 
 ```python
+def parse_number(value) -> Optional[float]:
+    """
+    Parse financial number, handling commas, parentheses, currency symbols.
+    Examples:
+    - "1,234.56" → 1234.56
+    - "(5000)" → -5000 (parentheses indicate negative)
+    - "$1,000.00" → 1000.00
+    - None or invalid → None
+    """
+
 def extract_invoice_from_pdf(filepath: str) -> dict:
-    """Extract invoice fields from PDF using pdfplumber."""
-    # Returns: vendor_name, invoice_number, date, subtotal, vat, total, currency, line_items, cu_invoice_number
+    """
+    Extract invoice fields from PDF using pdfplumber.
+    Uses regex patterns to find:
+    - Invoice number patterns: "Invoice No:", "Invoice #", "Inv #"
+    - Date patterns: Various date formats (DD/MM/YYYY, DD-MM-YY, etc.)
+    - Currency: Detects EUR/USD/GBP/KES via currency symbols or codes
+    - Amounts: Finds "Total:", "Amount Due:", "Grand Total:", etc.
+    - VAT: Searches for "VAT (16%)" or "Tax:" patterns
+    - CU Invoice Number: Looks for "CU Invoice No." or "Control Unit No."
+    - Tables: Extracts line items from PDF tables for 3-way matching
+    
+    Returns: {
+        "vendor_name": str,
+        "invoice_number": str,
+        "invoice_date": str,
+        "due_date": str,
+        "subtotal": float,
+        "vat_amount": float,
+        "total": float,
+        "currency": str,
+        "cu_invoice_number": str,
+        "line_items": list[list],
+        "raw_text": str,
+    }
+    """
 
 def extract_invoice_from_excel(filepath: str) -> dict:
-    """Extract invoice fields from Excel using openpyxl."""
-    # Returns: same as PDF
+    """
+    Extract invoice fields from Excel using openpyxl.
+    Reads spreadsheet, converts to text, applies same regex patterns as PDF.
+    Returns: Same structure as PDF extraction
+    """
 
-def parse_number(value) -> Optional[float]:
-    """Parse financial number, handling commas, parentheses, currency symbols."""
+def process_invoice(
+    extracted: dict,
+    vendor: dict,
+    rates: dict,
+    is_service: bool = False,
+    kra_rate_override: float = None,
+) -> dict:
+    """
+    Apply tax logic to an extracted invoice given a matched vendor.
+    CRITICAL FEATURES:
+    
+    1. **VAT Calculation**:
+       - Gets VAT treatment from vendor master (Standard 16% / Zero Rated 0% / Exempt)
+       - Calculates VAT on subtotal
+       - If extracted VAT mismatches calculated VAT by >1: flags warning ⚠️
+    
+    2. **WHT Calculation** (Withholding Tax):
+       - Gets WHT type from vendor (2% General Goods / 5% Professional / Exempt)
+       - Calculates WHT on SUBTOTAL ONLY (before VAT) — VAT is excluded from WHT base
+       - Formula: WHT = Subtotal × Rate (not Gross × Rate)
+       - Payment formula: Net = Gross Invoice − WHT
+    
+    3. **KRA Exchange Rate Handling** (CRITICAL FOR FOREIGN CURRENCY):
+       - For KES invoices: Uses market rate for display only
+       - For foreign currency (USD/EUR/GBP):
+         - If kra_rate_override provided: Uses KRA's official rate (per KRA regulation)
+         - If not provided: Uses live market rate BUT flags warning ⚠️
+       - IMPORTANT: WHT remittance to KRA must use KRA's official rate for invoice date,
+         not bank rate or market rate. If wrong rate used, KES amount won't match KRA records.
+       - Example: Invoice dated 2026-06-15, amount USD 1,000
+         - Market rate (today): 1 USD = 130 KES → WHT = 1,000 × 2% × 130 = 2,600 KES
+         - KRA official rate (for 2026-06-15): 1 USD = 128 KES → WHT = 1,000 × 2% × 128 = 2,560 KES
+         - KRA records show 2,560 KES; if you file 2,600 KES, it won't reconcile
+    
+    4. **Tax Flag & Warnings**:
+       - `tax_flag`: If VAT mismatch detected, warns before posting
+       - `kra_rate_warning`: If foreign currency but no KRA rate provided
+       - `posting_ready`: Boolean — False if any warnings, True if clear to post
+    
+    Returns: {
+        "vendor_name": str,
+        "vendor_id": str,
+        "cu_invoice_number": str,
+        "invoice_number": str,
+        "invoice_date": str,
+        "currency": str,
+        "subtotal": float,
+        "vat_treatment": str,
+        "vat_rate_pct": str,        # "16%", "0%", etc.
+        "vat_amount": float,
+        "invoice_total": float,
+        "wht_type": str,
+        "wht_rate_pct": str,        # "2%", "5%", etc.
+        "wht_amount": float,
+        "net_payable": float,       # Gross − WHT
+        "subtotal_kes": float,      # In KES for accounting
+        "vat_kes": float,
+        "total_kes": float,
+        "wht_kes": float,           # In KES using KRA rate (if provided) or market rate
+        "net_payable_kes": float,
+        "kra_rate_used": float,     # The rate actually used for WHT calculation
+        "kra_rate_source": str,     # "KRA official rate (128.5000)" or "⚠️ Market rate used..."
+        "kra_rate_warning": str,    # Warning if no KRA rate provided for foreign currency
+        "tax_flag": str,            # Any tax-related warnings
+        "posting_ready": bool,      # Safe to post if True
+    }
+    """
 ```
 
 ### WHT Calculator (`utils/wht_calculator.py`)
@@ -1490,6 +1722,55 @@ def generate_wht_excel(result: dict) -> bytes:
     """Generate Excel workbook with 2% and 5% sheets + summary."""
     # Returns: XLSX bytes (downloadable)
 ```
+
+### Tax Configuration Helpers (`data/tax_config.py`)
+
+**Helper Functions** (used throughout application):
+
+```python
+def get_vendor_by_name(name: str, vendors: list) -> dict:
+    """
+    Fuzzy match extracted vendor name to vendor master.
+    Uses substring matching (case-insensitive).
+    Example:
+    - Extracted: "BAYER CHEMICALS LTD"
+    - Master: "Bayer East Africa Ltd"
+    - Result: Matches (substring "Bayer" found in both)
+    
+    Returns matched vendor dict or None if not found.
+    """
+
+def get_vat_rate(vat_treatment: str) -> float:
+    """
+    Return VAT rate for a given treatment.
+    - "Standard (16%)" → 0.16
+    - "Zero Rated (0%)" → 0.00
+    - "Exempt" → 0.0 (no VAT charged, no input credit)
+    """
+
+def get_wht_rate(wht_type: str, is_service: bool = False) -> float:
+    """
+    Return WHT rate for vendor type.
+    - "General Goods/Contractual (2%)" → 0.02
+    - "Professional/Consultancy (5%)" → 0.05
+    - "Exempt" → 0.0 (no WHT)
+    """
+```
+
+**Seeded Vendor Master Data** (8 vendors pre-configured):
+
+| Vendor ID | Name | Type | VAT | WHT | Currency | GL Account | Cost Centre | Notes |
+|-----------|------|------|-----|-----|----------|-----------|-------------|-------|
+| V001 | Bayer East Africa Ltd | Supplier | Standard 16% | 2% | KES | 5000 | 511 | Chemical/agricultural supplies |
+| V002 | DHL Express Kenya | Supplier | Standard 16% | 2% | KES | 5300 | 511 | Courier and logistics |
+| V003 | Deloitte East Africa | Consultant | Standard 16% | 5% | KES | 6500 | 206 | Audit and advisory services |
+| V004 | Kenya Power & Lighting | Supplier | Standard 16% | 2% | KES | 6200 | 121 | Electricity utility |
+| V005 | Safaricom PLC | Supplier | Standard 16% | 2% | KES | 6300 | 121 | Telecoms and data services |
+| V006 | PricewaterhouseCoopers Kenya | Consultant | Standard 16% | 5% | KES | 6400 | 121 | Tax advisory and audit |
+| V007 | Export Supplies International | Supplier | Zero Rated 0% | 2% | USD | 5100 | 511 | Export supplies (zero-rated) |
+| V008 | Chrysal International BV | Supplier | Zero Rated 0% | Exempt | EUR | 2010 | 121 | Parent company (intercompany) |
+
+(Users can add more vendors dynamically via Vendor Master module)
 
 ### Reconciliation Engine (`utils/reconciliation_engine.py`)
 
@@ -1803,6 +2084,171 @@ class AuditAction:
 ```
 
 ---
+
+## Advanced Topics
+
+### Session State Management Pattern
+
+FinOpsAi uses Streamlit's session state extensively to maintain data across browser refreshes:
+
+```python
+# In app/main.py — Initialization pattern
+if "vendors" not in st.session_state:
+    st.session_state.vendors = DEFAULT_VENDORS.copy()
+if "rates" not in st.session_state:
+    st.session_state.rates, st.session_state.rates_live = get_rates()
+if "processed_invoices" not in st.session_state:
+    st.session_state.processed_invoices = []
+# ... more initializations
+```
+
+**Why This Matters**:
+- Session state persists data during user's browser session
+- User can navigate between modules without losing data
+- Data cleared when browser tab closed or new session started
+- Perfect for single-user finance applications
+
+**Limitations & Trade-offs**:
+- NOT suitable for multi-user collaboration (data not shared between users)
+- NOT persisted to database (loss on app restart)
+- For production, would integrate with database backend
+
+**Current Use Cases**:
+- Storing processed invoices (temp, until posted to AX)
+- Storing WHT calculations (temp, until filed with KRA)
+- Storing reconciliation results (for review/approval)
+- User context and audit trail
+
+### Regex Pattern Library (Invoice Extraction)
+
+FinOpsAi uses comprehensive regex patterns to extract invoicing data from unstructured PDF/Excel:
+
+**Patterns Used**:
+
+```python
+# Invoice Number: "Invoice No:", "Invoice #", "Inv #"
+r'(?:invoice\s*(?:no|number|#)[:\s]*)([\w\-\/]+)'
+
+# Invoice Date: Multiple date format support
+r'(?:invoice\s*date|date)[:\s]*(\d{1,2}[\-\/\.]\d{1,2}[\-\/\.]\d{2,4})'
+
+# Currency Detection: EUR/USD/GBP/KES
+r'\bEUR\b|€'  # EUR
+r'\bUSD\b|\$'  # USD  
+r'\bGBP\b|£'   # GBP
+
+# VAT Amount: "VAT (16%)" or "Tax:" patterns
+r'vat\s*\(?\s*1[0-9]\s*%?\s*\)?[:\s]+([\d,]+\.?\d*)'
+
+# CU Invoice Number: "CU Invoice No." or "Control Unit No."
+r'(?:cu\s*invoice\s*no\.?|cu\s*no\.?|control\s*unit\s*no\.?)[:\s]+([\w\-]+)'
+
+# Subtotal/Net Amount: "Subtotal:", "Sub-total:", "Net Amount:"
+r'(?:subtotal|sub-total|net\s*amount)[:\s]*([\d,]+\.?\d*)'
+
+# Total: "Total:", "Amount Due:", "Grand Total:"
+r'(?:total|amount\s*due|grand\s*total)[:\s]*([\d,]+\.?\d*)'
+```
+
+**Why This Matters**:
+- PDFs from different vendors use different formatting
+- Regex patterns make invoice extraction robust across vendors
+- Handles variations: "Invoice No:" vs "Inv #:" vs "Invoice Number"
+- Numbers with commas, parentheses, currency symbols handled
+
+**Fallback Strategy**:
+- If regex fails to find field, user must enter manually
+- Never crashes; just marks field as None
+- User still sees extracted data and can correct
+
+### Multi-User Approval Chain Logic
+
+The approval chain routing is location-based and amount-sensitive:
+
+```python
+APPROVAL_CHAIN = {
+    "Production/Freight-in": {
+        "approver": "Harrison",     # Production Manager
+        "role": "Production Manager",
+        "cc": "511",                # Cost Centre
+        "min_amount": 0,            # No minimum
+        "max_amount": 500000,       # Up to 500K
+    },
+    ...
+}
+
+# Routing Logic (conceptual):
+def route_for_approval(invoice):
+    gl_account = invoice["gl_account"]
+    cost_centre = invoice["cost_centre"]
+    amount = invoice["total"]
+    
+    # Find matching approval chain entry by cost centre + GL account
+    for key, chain in APPROVAL_CHAIN.items():
+        if chain["cc"] == cost_centre:
+            # Check amount thresholds
+            if amount <= chain.get("max_amount", float("inf")):
+                return chain["approver"]
+    
+    # Escalate to Business Controller if no match or high amount
+    return "Charles (Business Controller)"
+```
+
+**Current Approvers**:
+- **Mercy** (Senior Accountant): CS / AR invoices
+- **Tony** (Finance Manager): Consultancy / Finance invoices
+- **Harrison** (Production Manager): Production / Freight / OPS invoices
+- **Charles** (Business Controller): Large invoices, Finance policies
+- **Niels** (MD): Escalated exceptional transactions
+
+### Audit Trail Immutability Guarantee
+
+The audit trail is designed to be forensics-proof:
+
+**Implementation**:
+```python
+# In utils/audit_trail.py
+def log_action(...):
+    entry = {
+        "timestamp": now_nairobi().strftime("%Y-%m-%d %H:%M:%S"),
+        "user": user,
+        "action": action,
+        "document_ref": document_ref,
+        "details": details,
+        "amount": f"{amount:,.2f} {currency}",
+        "before": before_value,
+        "after": after_value,
+    }
+    # APPEND ONLY — no delete, no modify
+    st.session_state.audit_trail.append(entry)
+```
+
+**Properties**:
+- Append-only (entries never deleted or modified)
+- Timestamp in Nairobi timezone (for KRA compliance)
+- Captures before/after values (for reconciliation)
+- Captures user, action type, document reference
+- Perfect for KRA audits, internal investigations
+
+**Limitations**:
+- Currently in session state (lost on app restart)
+- For production: should be persisted to append-only database (e.g., PostgreSQL, MongoDB)
+- Should implement access controls (who can view what)
+
+---
+
+## Summary of Undocumented Features Added
+
+1. **Invoice Validation & Flagging System** - Tax warnings, VAT mismatch detection, KRA rate verification
+2. **External API Integration** - exchangerate-api.com for live rates with fallback
+3. **Sample Data Pre-loading** - Dashboard shows realistic data on first visit
+4. **Extended Vendor Master** - 8 pre-configured vendors documented
+5. **Tax Configuration Helpers** - get_vendor_by_name(), get_vat_rate(), get_wht_rate()
+6. **Session State Management Pattern** - How data persists within user session
+7. **Regex Pattern Library** - Comprehensive extraction patterns for invoices
+8. **Multi-User Approval Chain** - Routing logic by cost centre and amount
+9. **Audit Trail Immutability** - Design and implementation details
+10. **KRA Rate Override Logic** - Detailed explanation of foreign currency compliance handling
 
 ## Summary: Key Takeaways
 
