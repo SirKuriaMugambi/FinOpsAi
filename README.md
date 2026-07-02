@@ -11,7 +11,7 @@ Upload invoices, process tax calculations, reconcile payments, and generate KRA-
 In a typical private company finance department, the following happen manually every month:
 
 - AP invoices arrive by email or physical copy → printed, scanned, posted into AX one by one
-- Tax treatment (zero rated / exempt / 16% / 5% VAT) has to be confirmed per vendor per invoice — easy to confuse under pressure
+- Tax treatment (zero rated / exempt / 16% VAT) has to be confirmed per vendor per invoice — easy to confuse under pressure
 - For foreign currency invoices (EUR/USD), WHT must be calculated using **KRA's official exchange rate for the invoice date** — not the current market rate
 - Every invoice posted for WHT needs its **CU invoice number** (KRA ETR/TIMS serial) as the filing reference
 - Payments are matched to invoices manually in Excel, then remittance advice is typed up per vendor
