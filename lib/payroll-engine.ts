@@ -261,6 +261,53 @@ export function buildCostCentreBreakdown(employees: EmployeeSummary[]): CostCent
   return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code))
 }
 
+export interface PayrollVarianceReport {
+  total_variance: number
+  favorable_variance: number
+  unfavorable_variance: number
+  by_cost_centre: Array<{
+    code: string
+    name: string
+    gross: number
+    net: number
+    variance: number
+    payroll_cost: number
+  }>
+}
+
+export function buildPayrollVarianceReport(employees: EmployeeSummary[]): PayrollVarianceReport {
+  const total_variance = +employees.reduce((sum, emp) => sum + (emp.gross_salary - emp.net_salary), 0).toFixed(2)
+  const favorable_variance = Math.max(total_variance, 0)
+  const unfavorable_variance = Math.max(-total_variance, 0)
+
+  const ccMap = new Map<string, { code: string; name: string; gross: number; net: number; variance: number; payroll_cost: number }>()
+
+  for (const emp of employees) {
+    const cc = emp.cost_centre
+    const row = ccMap.get(cc) ?? {
+      code: cc,
+      name: CC_NAMES[cc] ?? cc,
+      gross: 0,
+      net: 0,
+      variance: 0,
+      payroll_cost: 0,
+    }
+
+    row.gross += emp.gross_salary
+    row.net += emp.net_salary
+    row.variance += emp.gross_salary - emp.net_salary
+    row.payroll_cost += emp.net_salary
+    ccMap.set(cc, row)
+  }
+
+  return {
+    total_variance,
+    favorable_variance,
+    unfavorable_variance,
+    by_cost_centre: Array.from(ccMap.values()).sort((a, b) => a.code.localeCompare(b.code)),
+  }
+}
+
 // ── CSV export helpers ────────────────────────────────────────────────────────
 export function buildMasterRegisterCSV(employees: EmployeeSummary[]): string {
   const headers = [

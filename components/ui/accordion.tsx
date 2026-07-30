@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Accordion as AccordionPrimitive } from "radix-ui"
+import { Root, Item, Header, Trigger, Content } from "@radix-ui/react-accordion"
 
 import { cn } from "@/lib/utils"
 import { CaretDownIcon, CaretUpIcon } from "@phosphor-icons/react"
@@ -9,9 +9,9 @@ import { CaretDownIcon, CaretUpIcon } from "@phosphor-icons/react"
 function Accordion({
   className,
   ...props
-}: React.ComponentProps<typeof AccordionPrimitive.Root>) {
+}: React.ComponentProps<typeof Root>) {
   return (
-    <AccordionPrimitive.Root
+    <Root
       data-slot="accordion"
       className={cn("flex w-full flex-col", className)}
       {...props}
@@ -22,9 +22,9 @@ function Accordion({
 function AccordionItem({
   className,
   ...props
-}: React.ComponentProps<typeof AccordionPrimitive.Item>) {
+}: React.ComponentProps<typeof Item>) {
   return (
-    <AccordionPrimitive.Item
+    <Item
       data-slot="accordion-item"
       className={cn("not-last:border-b", className)}
       {...props}
@@ -36,10 +36,10 @@ function AccordionTrigger({
   className,
   children,
   ...props
-}: React.ComponentProps<typeof AccordionPrimitive.Trigger>) {
+}: React.ComponentProps<typeof Trigger>) {
   return (
-    <AccordionPrimitive.Header className="flex">
-      <AccordionPrimitive.Trigger
+    <Header className="flex">
+      <Trigger
         data-slot="accordion-trigger"
         className={cn(
           "group/accordion-trigger relative flex flex-1 items-start justify-between rounded-none border border-transparent py-2.5 text-left text-xs font-medium transition-all outline-none hover:underline focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 focus-visible:after:border-ring disabled:pointer-events-none disabled:opacity-50 **:data-[slot=accordion-trigger-icon]:ml-auto **:data-[slot=accordion-trigger-icon]:size-4 **:data-[slot=accordion-trigger-icon]:text-muted-foreground",
@@ -50,8 +50,8 @@ function AccordionTrigger({
         {children}
         <CaretDownIcon data-slot="accordion-trigger-icon" className="pointer-events-none shrink-0 group-aria-expanded/accordion-trigger:hidden" />
         <CaretUpIcon data-slot="accordion-trigger-icon" className="pointer-events-none hidden shrink-0 group-aria-expanded/accordion-trigger:inline" />
-      </AccordionPrimitive.Trigger>
-    </AccordionPrimitive.Header>
+      </Trigger>
+    </Header>
   )
 }
 
@@ -59,9 +59,9 @@ function AccordionContent({
   className,
   children,
   ...props
-}: React.ComponentProps<typeof AccordionPrimitive.Content>) {
+}: React.ComponentProps<typeof Content>) {
   return (
-    <AccordionPrimitive.Content
+    <Content
       data-slot="accordion-content"
       className="overflow-hidden text-xs data-open:animate-accordion-down data-closed:animate-accordion-up"
       {...props}
@@ -74,7 +74,7 @@ function AccordionContent({
       >
         {children}
       </div>
-    </AccordionPrimitive.Content>
+    </Content>
   )
 }
 
