@@ -55,7 +55,7 @@ export default function WorkspaceLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, setCurrentUser, clearSession } = useFinOps();
+  const { currentUser, currentUserRole, signOut } = useFinOps();
   const {
     theme,
     setTheme,
@@ -161,17 +161,16 @@ export default function WorkspaceLayout({
     },
   ];
 
-  const users = ["Mercy", "Tony", "Harrison", "Charles"];
-
-  const userRoles: Record<string, string> = {
-    Mercy: "Senior Accountant",
-    Tony: "Finance Manager",
-    Harrison: "Production Manager",
-    Charles: "Business Controller",
+  const roleLabels: Record<string, string> = {
+    senior_accountant: "Senior Accountant",
+    finance_manager: "Finance Manager",
+    production_manager: "Production Manager",
+    business_controller: "Business Controller",
   };
 
-  const handleUserChange = (newUser: string) => {
-    setCurrentUser(newUser);
+  const handleSignOut = async () => {
+    await signOut();
+    router.push("/sign-in");
   };
 
   // Close menus on page transition
@@ -231,15 +230,15 @@ export default function WorkspaceLayout({
           <div className="flex items-center justify-between">
             <div className="flex flex-col min-w-0">
               <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 uppercase">
-                SYS_OPERATOR
+                {currentUserRole ? roleLabels[currentUserRole] : "SYS_OPERATOR"}
               </span>
               <span suppressHydrationWarning className="text-[11px] font-medium text-zinc-800 dark:text-zinc-200 truncate">
                 {currentUser}
               </span>
             </div>
             <button
-              onClick={clearSession}
-              title="Reset session & seeds"
+              onClick={handleSignOut}
+              title="Sign out"
               className={`p-1.5 text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 ${buttonRadius} transition-colors`}
             >
               <LogOut className="h-3.5 w-3.5" />
@@ -299,25 +298,22 @@ export default function WorkspaceLayout({
                 </div>
               ))}
             </nav>
-            <div className="p-3 border-t border-zinc-100 dark:border-zinc-900 bg-zinc-50 dark:bg-zinc-950">
-              <span className="text-[9px] font-mono text-zinc-400 block mb-1">
-                CURRENT OPERATOR
-              </span>
-              <div className="flex gap-2">
-                {users.map((u) => (
-                  <button
-                    key={u}
-                    onClick={() => handleUserChange(u)}
-                    className={`flex-1 py-1 text-[10px] border font-mono tracking-tighter ${
-                      currentUser === u
-                        ? `${accentBadge} font-semibold`
-                        : "border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 bg-white dark:bg-zinc-900"
-                    } ${buttonRadius}`}
-                  >
-                    {u}
-                  </button>
-                ))}
+            <div className="p-3 border-t border-zinc-100 dark:border-zinc-900 bg-zinc-50 dark:bg-zinc-950 flex items-center justify-between">
+              <div className="flex flex-col min-w-0">
+                <span className="text-[9px] font-mono text-zinc-400 uppercase">
+                  {currentUserRole ? roleLabels[currentUserRole] : "SYS_OPERATOR"}
+                </span>
+                <span className="text-[11px] font-medium text-zinc-800 dark:text-zinc-200 truncate">
+                  {currentUser}
+                </span>
               </div>
+              <button
+                onClick={handleSignOut}
+                title="Sign out"
+                className={`p-1.5 text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 ${buttonRadius} transition-colors`}
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
         </div>
@@ -354,23 +350,17 @@ export default function WorkspaceLayout({
               <span>{currentTime}</span>
             </div>
 
-            {/* Desktop User Switcher */}
+            {/* Signed-in Operator Identity */}
             <div className="hidden sm:flex items-center gap-2 border-r border-zinc-200 dark:border-zinc-800 pr-3.5">
               <span className="text-[10px] font-mono text-zinc-400 uppercase hidden xl:inline">
                 Role_Context:
               </span>
-              <select
+              <span
                 suppressHydrationWarning
-                value={currentUser}
-                onChange={(e) => handleUserChange(e.target.value)}
-                className={`bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11px] font-mono text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400 focus:border-transparent ${buttonRadius}`}
+                className="text-[11px] font-mono text-zinc-800 dark:text-zinc-200"
               >
-                {users.map((u) => (
-                  <option key={u} value={u}>
-                    {u} ({userRoles[u]})
-                  </option>
-                ))}
-              </select>
+                {currentUser} ({currentUserRole ? roleLabels[currentUserRole] : "—"})
+              </span>
             </div>
 
             {/* Style Palette Button */}

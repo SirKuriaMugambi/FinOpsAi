@@ -3,23 +3,42 @@
  *
  * Source of truth: reference-data/CA- AI Payroll automation project.xlsx
  *   Sheet "AI-Automation-workings" (Rows 25–51, 56–60, 62)
+ *   Cross-verified line-by-line against real employee figures on 2026-08-02.
  *
- * KRA PAYE bands (2024, monthly):
+ * KRA PAYE bands (2024–2026, monthly):
  *   Band 1 : ≤ 24,000                → 10%  (max KES 2,400)
  *   Band 2 : 24,001 – 32,333         → 25%  (max KES 2,083.25)
  *   Band 3 : 32,334 – 500,000        → 30%  (max KES 140,299.80)
  *   Band 4 : 500,001 – 800,000       → 32.5% (max KES 97,499.675)
  *   Band 5 : > 800,000               → 35%
  *
- * Personal Relief  : KES 2,400 / month
- * AHL Relief       : AHL amount itself qualifies as relief from PAYE
- * NSSF Tier I      : KES 420 / month (statutory)
- * NSSF Tier II     : KES 1,740 / month (statutory)
- * SHIF             : 2.75% of gross salary
- * AHL (Housing)    : 1.5% of gross salary
- * Pension EE       : 5% of gross salary (capped at KES 20,000/mo)
- * Pension ER       : 10% of gross salary
+ * Personal Relief  : KES 2,400 / month (statutory default). Two employees
+ *                    on the parent-company/expatriate arrangement carry a
+ *                    different relief figure in Tony's sheet — these are
+ *                    NOT normalized to the standard 2,400; pass their real
+ *                    relief value via `personal_relief_override`.
+ * AHL Relief       : 15% of the AHL (Housing Levy) contribution, applied as
+ *                    a tax credit against Gross PAYE.
+ * NSSF Tier I/II   : KES 420 / KES 1,740 per month — kept FLAT, exactly as
+ *                    they appear in Tony's 2024 source sheet, per instruction
+ *                    to stay accurate to the original workbook rather than
+ *                    recalculate against newer earnings-limit bands.
+ * SHIF             : 2.75% of BASIC SALARY (verified — NOT gross salary).
+ * AHL (Housing)    : 1.5% of BASIC SALARY (verified — NOT gross salary).
+ * Pension EE       : 5% of BASIC SALARY (verified — NOT gross salary),
+ *                    capped at KES 20,000/month.
+ * Pension ER       : 10% of BASIC SALARY (employer match, same basis).
+ *
+ * Voluntary pension contributions do NOT reduce taxable pay in the source
+ * sheet — verified against an employee who has a voluntary contribution
+ * and whose Taxable Pay matches Gross − NSSF − Defined Pension only.
  */
+
+// NSSF Tier I/II — kept as the FLAT amounts from Tony's 2024 source sheet,
+// not recalculated against earnings-limit bands, per instruction to stay
+// accurate to the original workbook.
+const NSSF_TIER_1_FLAT = 420
+const NSSF_TIER_2_FLAT = 1740
 
 export interface PayrollInputs {
   base_salary: number
@@ -34,6 +53,11 @@ export interface PayrollInputs {
   company_loan: number
   bank_loan: number
   sacco: number
+  // Optional override for employees whose relief doesn't follow the
+  // standard KES 2,400 default (e.g. parent-company/expatriate staff on
+  // a different tax/relief arrangement in Tony's sheet). Leave undefined
+  // for standard employees.
+  personal_relief_override?: number
 }
 
 export interface PayrollResult {
@@ -108,33 +132,41 @@ export function computePayroll(inputs: PayrollInputs): PayrollResult {
     base_salary, bonus_commission, fringe_benefit, transport_allowance,
     arrears, ot_other, voluntary_pension,
     advances, helb, company_loan, bank_loan, sacco,
+    personal_relief_override,
   } = inputs
 
-  // 1. Gross Salary
+  // 1. Gross Salary — sum of all allowances, still on gross (unchanged)
   const gross_salary = base_salary + bonus_commission + fringe_benefit
     + transport_allowance + arrears + ot_other
 
-  // 2. Statutory deductions (pre-tax)
-  const nssf_t1 = 420
-  const nssf_t2 = 1740
-  const shif = +(gross_salary * 0.0275).toFixed(2)                  // 2.75% SHIF
-  const ahl = +(gross_salary * 0.015).toFixed(2)                    // 1.5% Housing Levy
-  const defined_pension_ee = +Math.min(gross_salary * 0.05, 20000).toFixed(2) // 5% capped at 20K
-  const defined_pension_er = +(gross_salary * 0.10).toFixed(2)      // 10% employer
+  // 2. Statutory deductions (pre-tax) — SHIF, AHL and Pension EE are all
+  //    based on BASIC SALARY, not gross. Verified against the source sheet.
+  //    NSSF stays FLAT per Tony's 2024 sheet, not recalculated per employee.
+  const nssf_t1 = NSSF_TIER_1_FLAT
+  const nssf_t2 = NSSF_TIER_2_FLAT
+  const shif = +(base_salary * 0.0275).toFixed(2)                   // 2.75% SHIF, on BASIC
+  const ahl = +(base_salary * 0.015).toFixed(2)                     // 1.5% Housing Levy, on BASIC
+  const defined_pension_ee = +Math.min(base_salary * 0.05, 20000).toFixed(2) // 5% of BASIC, capped at 20K
+  const defined_pension_er = +(base_salary * 0.10).toFixed(2)       // 10% of BASIC, employer match
   const total_voluntary = voluntary_pension
 
-  // 3. Taxable pay (gross − pension − NSSF; SHIF and AHL are not pre-tax)
+  // 3. Taxable pay = Gross − NSSF − Defined Pension EE only.
+  //    Voluntary pension does NOT reduce taxable pay — verified against
+  //    an employee with a voluntary contribution whose taxable pay matched
+  //    exactly without subtracting it.
   const taxable_pay = +(
-    gross_salary - defined_pension_ee - total_voluntary - nssf_t1 - nssf_t2
+    gross_salary - defined_pension_ee - nssf_t1 - nssf_t2
   ).toFixed(2)
 
   // 4. Gross PAYE from slabs
   const gross_paye = +computeGrossPAYE(taxable_pay).toFixed(2)
 
-  // 5. Reliefs
-  const personal_relief = 2400
+  // 5. Reliefs — use the employee's override if one is set (parent-company/
+  //    expatriate staff on a different relief arrangement), otherwise the
+  //    standard KES 2,400/month.
+  const personal_relief = personal_relief_override ?? 2400
   const nhif_relief = 0                  // SHIF relief currently 0 per the sheet
-  const ahl_relief = +Math.min(ahl * 0.15, ahl).toFixed(2)  // AHL at marginal rate
+  const ahl_relief = +Math.min(ahl * 0.15, ahl).toFixed(2)  // 15% of AHL, verified exact
 
   // 6. Net PAYE
   const net_paye = +Math.max(
@@ -142,15 +174,19 @@ export function computePayroll(inputs: PayrollInputs): PayrollResult {
     0
   ).toFixed(2)
 
-  // 7. Total deductions
+  // 7. Total deductions — Net Pay must still subtract the non-cash fringe
+  //    benefit separately (see step 8): it's taxed as part of gross but
+  //    never actually paid out in cash.
   const total_deductions = +(
     net_paye + nssf_t1 + nssf_t2 + shif + ahl
     + defined_pension_ee + total_voluntary
     + advances + helb + company_loan + bank_loan + sacco
   ).toFixed(2)
 
-  // 8. Net salary
-  const net_salary = +(gross_salary - total_deductions).toFixed(2)
+  // 8. Net salary — subtract non-cash fringe benefit (it's taxed but not
+  //    paid in cash) in addition to total deductions. Verified exact
+  //    against multiple employees with and without fringe benefits.
+  const net_salary = +(gross_salary - fringe_benefit - total_deductions).toFixed(2)
 
   // 9. Legacy aliases
   const allowances = +(fringe_benefit + transport_allowance + bonus_commission).toFixed(2)

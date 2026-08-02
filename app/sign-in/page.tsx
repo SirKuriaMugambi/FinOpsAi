@@ -4,34 +4,69 @@ import React, { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useFinOps } from "@/components/finops-provider"
 import { useTheme } from "@/components/theme-provider"
+import { createSupabaseBrowserClient } from "@/lib/supabase"
 import Logo from "@/components/logo"
 import Link from "next/link"
-import { ShieldCheck, ArrowRight } from "lucide-react"
+import { ShieldCheck, ArrowRight, AlertCircle } from "lucide-react"
 
 export default function SignInPage() {
   const router = useRouter()
-  const { setCurrentUser, addAuditLog } = useFinOps()
+  const { applyAuthProfile, addAuditLog } = useFinOps()
   const { cardRadius, buttonRadius, accentBg, accentText } = useTheme()
 
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [operator, setOperator] = useState("Mercy")
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email || !password) return
+    setError(null)
 
-    // Set active session user context
-    setCurrentUser(operator)
+    const supabase = createSupabaseBrowserClient()
+    if (!supabase) {
+      setError("Backend is not configured. Contact your system administrator.")
+      return
+    }
 
-    // Append immutable audit log
+    setSubmitting(true)
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (authError || !data.user) {
+      setSubmitting(false)
+      setError(authError?.message || "Invalid email or password.")
+      return
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("full_name, role, email")
+      .eq("id", data.user.id)
+      .single()
+
+    setSubmitting(false)
+
+    if (profileError || !profile) {
+      setError("Signed in, but no operator profile was found for this account.")
+      return
+    }
+
+    applyAuthProfile({
+      full_name: profile.full_name,
+      role: profile.role,
+      email: profile.email,
+    })
+
     addAuditLog(
       "USER SIGN-IN",
-      "OAuth / Mock Audit Verify",
-      `System operator "${operator}" authenticated successfully. Session initiated.`
+      "Supabase Auth",
+      `Operator "${profile.full_name}" authenticated successfully. Session initiated.`,
     )
 
-    // Redirect to main suite
     router.push("/dashboard")
   }
 
@@ -45,22 +80,15 @@ export default function SignInPage() {
           <p className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest pt-2">OPERATIONAL PORTAL SIGN-IN</p>
         </div>
 
+        {error && (
+          <div className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 px-3 py-2 text-[11px]">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
+
         {/* Form */}
         <form onSubmit={handleSignIn} className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-[10px] font-mono text-zinc-400 uppercase block">Active Operator Context</label>
-            <select
-              value={operator}
-              onChange={(e) => setOperator(e.target.value)}
-              className={`w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-400 ${buttonRadius}`}
-            >
-              <option value="Mercy">Mercy Njoroge (Senior Accountant)</option>
-              <option value="Tony">Tony Mwangi (Finance Manager)</option>
-              <option value="Harrison">Harrison Kiarie (Production Manager)</option>
-              <option value="Charles">Charles Otieno (Business Controller)</option>
-            </select>
-          </div>
-
           <div className="space-y-1">
             <label className="text-[10px] font-mono text-zinc-400 uppercase block">Corporate Email Address</label>
             <input
@@ -88,9 +116,10 @@ export default function SignInPage() {
           <div className="pt-2">
             <button
               type="submit"
-              className={`w-full py-2 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center justify-center gap-1.5 ${accentBg} ${buttonRadius}`}
+              disabled={submitting}
+              className={`w-full py-2 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center justify-center gap-1.5 disabled:opacity-50 ${accentBg} ${buttonRadius}`}
             >
-              <span>Initialize Session</span>
+              <span>{submitting ? "Authenticating…" : "Initialize Session"}</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>

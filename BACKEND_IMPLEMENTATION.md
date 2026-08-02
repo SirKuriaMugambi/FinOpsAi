@@ -4,6 +4,22 @@ This document provides a production-ready blueprint for transitioning the Chrysa
 
 ---
 
+## 0. Implementation Status (as of 2026-08-02)
+
+| Area | Status | Notes |
+| :--- | :--- | :--- |
+| Postgres schema (§2) | ✅ Live | All 12 tables + enums confirmed against the live DB. Tracked snapshot: `schema.sql` (regenerate after further schema changes). |
+| RLS + `get_user_role()` (§3) | ✅ Live | Shipped via `supabase/migrations/20260802201854_finalize_backend_spec.sql`. RLS enabled on all 12 tables; policies follow the role matrix in §3.1, with `invoices` policies matching §3.3 verbatim. |
+| `auth.users` → `profiles` trigger | ✅ Live | `handle_new_user()` + `on_auth_user_created` trigger, added in the same migration. Not in the original spec, but required for §4.1 sign-up to work — without it, new auth users have no `profiles` row. |
+| Storage bucket `finops-documents` | ✅ Live | Created in the same migration, private (`public: false`), with `storage.objects` policies scoped to the bucket. |
+| §4.1 Login / Sign-up | ✅ Implemented | Real Supabase Auth (`signInWithPassword`, `signUp`). See §4.1 below for details, including a Next.js-16-specific gotcha (`proxy.ts`, not `middleware.ts`). |
+| §4.6 Payroll Automator | ✅ Implemented | `lib/payroll-engine.ts` + `app/api/payroll/route.ts`, reads/writes `employees` / `payroll_runs` / `payroll_register_entries`, with a `lib/seeds.ts` fallback if Supabase is unreachable. Known deviations from §4.6's statutory constants are noted inline in that section. |
+| §4.2–4.5, 4.7, 4.8 (Dashboard, Invoice, AP Recon, WHT, Documents, Audit Trail) | ⬜ Not started | Still reading from `lib/seeds.ts` / local `useState`. No `supabase` calls yet. |
+| `reconciliation_ledger` table (referenced in §4.4) | ⬜ Not started | Referenced in the page spec but never given a column definition in §2; needs a schema decision before implementation. |
+| `payroll_constants` table (§4.6 TIP) | ⬜ Not started | Explicitly framed as a future enhancement, not a hard requirement. |
+
+---
+
 ## 1. System Architecture
 
 The application will transition to a full-stack Next.js App Router application integrated with Supabase:
@@ -295,6 +311,8 @@ CREATE TABLE public.audit_logs (
 
 ## 3. Authentication & Row Level Security (RLS)
 
+> **Status: implemented.** RLS is enabled on all 12 tables and `get_user_role()` exists on the live database — see `supabase/migrations/20260802201854_finalize_backend_spec.sql` for the exact policies shipped (they extend the role matrix below to every table, not just `invoices`). One caveat carried over from this spec: the "only `finance_manager` can approve" policy on `invoices` (§3.3) and the broad "all accountants can write" policy are both permissive policies evaluated with OR semantics in Postgres, so a `senior_accountant` is not actually blocked from flipping `status` to `Approved` by RLS alone — enforcing that specific column-level restriction would need a trigger or a check constraint, not row-level policies.
+
 Supabase Row Level Security will enforce role-based access control directly in Postgres:
 
 ### 3.1 Role Mapping Matrix
@@ -349,11 +367,14 @@ USING (
 Here is the exact page-by-page mapping mapping state transformations from mock frontend to Supabase API calls.
 
 ### 4.1 Login / Initial Portal (`/sign-in` & `/sign-up`)
-- **Current Mock Flow**: Sets static string in `localStorage` context representing Mercy, Tony, Charles, etc.
-- **Supabase Action**:
-  - Sign-in: Call `supabase.auth.signInWithPassword({ email, password })`.
-  - Upon successful auth, query `profiles` table to pull full name, role, and department. Store in global React Context.
-  - Failures trigger visible alert messages (invalid password/user).
+> **Status: implemented.**
+- **Sign-in** (`app/sign-in/page.tsx`): Calls `supabase.auth.signInWithPassword({ email, password })` via the browser client (`lib/supabase.ts` → `createSupabaseBrowserClient`). On success, queries `profiles` for `full_name`/`role`/`email` and stores them in `FinOpsContext` via `applyAuthProfile()`. Auth and profile-lookup failures both surface a visible inline error banner.
+- **Sign-up** (`app/sign-up/page.tsx`): Calls `supabase.auth.signUp({ email, password, options: { data: { full_name, role } } })`. The `full_name`/`role` land in `raw_user_meta_data`, which the `handle_new_user()` trigger reads to populate the new `profiles` row automatically (defaults to `senior_accountant` if `role` is missing). This project has **email confirmation enabled** (confirmed by testing directly against the live project), so `signUp()` does not return a session immediately — the page detects `!data.session` and shows a "check your email" screen instead of redirecting to `/dashboard`.
+- **Session state**: `components/finops-provider.tsx` hydrates `currentUser`/`currentUserRole`/`currentUserEmail` from the existing Supabase session on mount (`getSession()` + a `profiles` lookup) and stays in sync via `onAuthStateChange`, so a page refresh doesn't lose identity. `signOut()` calls `supabase.auth.signOut()` and clears local state.
+- **Route protection**: unauthenticated access to any workspace route redirects to `/sign-in`; an authenticated session on `/sign-in` or `/sign-up` redirects to `/dashboard`.
+  - **Next.js-16-specific gotcha**: this project's Next.js build has renamed `middleware.ts` → `proxy.ts` (exported function must be named `proxy`, not `middleware` — see `node_modules/next/dist/docs/01-app/01-getting-started/16-proxy.md`). The route-protection logic lives in `proxy.ts` at the repo root, not `middleware.ts`. Using the old convention silently fails at runtime (`Could not parse module 'middleware.ts', file not found`).
+- **Removed as a consequence**: the previous UI had a free "switch to any operator" dropdown (Mercy/Tony/Harrison/Charles) in the workspace sidebar, which let anyone impersonate any role without credentials. That's incompatible with real auth and has been replaced with a read-only display of the authenticated operator's name/role and a real sign-out button.
+- Verified end-to-end against the live Supabase project: sign-up → `handle_new_user()` trigger → `profiles` row created → sign-in → RLS-gated self-read of `profiles` → `get_user_role()` all resolve correctly.
 
 ### 4.2 Dashboard (`/dashboard`)
 - **Current Mock Flow**: Computes aggregations over local array state.
@@ -464,39 +485,41 @@ SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 DATABASE_URL=postgresql://postgres.lynksuvhhkltbappqsii:Eex3328r3ZCKMTcD@aws-0-eu-west-1.pooler.supabase.com:6543/postgres
 ```
 
-### 5.2 Next.js Supabase Client Factory (`lib/supabase.ts`)
-```typescript
-import { createBrowserClient, createServerClient } from "@supabase/ssr"
-import { cookies } from "next/headers"
+### 5.2 Next.js Supabase Client Factories (as actually implemented)
 
-// Client-side client configuration
-export const createClient = () => {
+The spec originally called for a single `lib/supabase.ts` with `createClient`/`createServer`. The implementation instead splits by privilege level across two files, plus a third client inline in `proxy.ts`:
+
+- **`lib/supabase.ts`** — `createSupabaseBrowserClient()` (anon key, browser-side, session-persisting) and `createSupabaseServerClient()` (anon key, async, cookie-based via `next/headers` — for Server Components / Route Handlers that need to read the current user's session). Both return `null` if env vars are missing, so callers must handle the null case rather than assume the backend is configured.
+- **`lib/supabase-server.ts`** — `createSupabaseAdminClient()`, a service-role client (bypasses RLS). Used server-side only, e.g. `app/api/payroll/route.ts`.
+- **`proxy.ts`** (repo root) — a third, request-scoped client built inline with `createServerClient` against `NextRequest`/`NextResponse` cookies (the Server Component cookie adapter above doesn't work in Proxy — different runtime, different cookie API). Calls `supabase.auth.getUser()` to decide route-protection redirects. Per Next.js's own guidance, this is an *optimistic* check only — the real authorization boundary is Postgres RLS (§3), not this redirect.
+
+```typescript
+// lib/supabase.ts
+import { createBrowserClient, createServerClient } from "@supabase/ssr"
+
+export function createSupabaseBrowserClient() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) return null
   return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
   )
 }
 
-// Server-side / Route Handler client configuration (Next.js 16 compliant)
-export const createServer = async () => {
+export async function createSupabaseServerClient() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) return null
+  const { cookies } = await import("next/headers")
   const cookieStore = await cookies()
-  
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
     {
       cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
+        getAll: () => cookieStore.getAll(),
+        setAll: (cookiesToSet) => {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
+            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
           } catch {
-            // Under Server Components, cookies cannot be modified.
-            // Next.js middleware handles session refreshes.
+            // Server Components can't write cookies — proxy.ts owns session refresh instead.
           }
         },
       },
@@ -509,6 +532,7 @@ export const createServer = async () => {
 
 ## 6. Implementation Stages & Next Steps
 
-1. **Schema Execution**: Connect to Supabase project SQL Editor and run the schema setup queries.
-2. **Mock Data Migration**: Script a basic loader to read mock structures from `lib/seeds.ts` and bulk upload them into the database tables.
-3. **Setup Supabase Providers**: Re-integrate the state providers in the Next.js frontend codebase, replacing localStorage hooks with backend queries.
+1. ~~**Schema Execution**: Connect to Supabase project SQL Editor and run the schema setup queries.~~ ✅ Done — schema confirmed live, RLS/functions/trigger/storage bucket added via `supabase/migrations/20260802201854_finalize_backend_spec.sql`.
+2. **Mock Data Migration**: `scripts/import-employees-to-supabase.js` covers `employees`. Other tables (`vendors`, `invoices`, `wht_payments`, `gl_accounts`, `checklist_items`, `budgets`, `documents`, `audit_logs`) still need a loader from `lib/seeds.ts`.
+3. **Setup Supabase Providers**: Partially done — §4.1 (auth) and §4.6 (payroll) are wired to Supabase. Remaining: §4.2–4.5, 4.7, 4.8 (dashboard, invoice, AP reconciliation, WHT manager, document store, audit trail) still read from `lib/seeds.ts` / local `useState` and need the same treatment.
+4. **Open design decisions before continuing**: the `reconciliation_ledger` table needs a column spec (referenced in §4.4 but never defined), and a decision on whether `payroll_constants` (§4.6 TIP) is worth building now or deferred.

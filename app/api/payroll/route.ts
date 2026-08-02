@@ -1,5 +1,80 @@
 import { NextResponse } from "next/server"
+import { initialEmployees } from "@/lib/seeds"
 import { buildPayrollVarianceReport, computePayroll, type EmployeeSummary } from "@/lib/payroll-engine"
+import { createSupabaseAdminClient } from "@/lib/supabase-server"
+
+function normalizeEmployeeRow(row: Record<string, unknown>) {
+  const input = {
+    base_salary: Number(row.base_salary ?? 0),
+    bonus_commission: Number(row.bonus_commission ?? 0),
+    fringe_benefit: Number(row.fringe_benefit ?? 0),
+    transport_allowance: Number(row.transport_allowance ?? 0),
+    arrears: Number(row.arrears ?? 0),
+    ot_other: Number(row.ot_other ?? 0),
+    voluntary_pension: Number(row.voluntary_pension ?? 0),
+    advances: Number(row.advances ?? 0),
+    helb: Number(row.helb ?? 0),
+    company_loan: Number(row.company_loan ?? 0),
+    bank_loan: Number(row.bank_loan ?? 0),
+    sacco: Number(row.sacco ?? 0),
+  }
+
+  const result = computePayroll(input)
+
+  return {
+    id: String(row.id ?? ""),
+    name: String(row.name ?? ""),
+    kra_pin: String(row.kra_pin ?? ""),
+    grade: String(row.grade ?? ""),
+    cost_centre: String(row.cost_centre ?? "511"),
+    department: String(row.department ?? "Production"),
+    base_salary: input.base_salary,
+    bonus_commission: input.bonus_commission,
+    fringe_benefit: input.fringe_benefit,
+    transport_allowance: input.transport_allowance,
+    arrears: input.arrears,
+    ot_other: input.ot_other,
+    gross_salary: result.gross_salary,
+    voluntary_pension: input.voluntary_pension,
+    defined_pension_ee: result.defined_pension_ee,
+    defined_pension_er: result.defined_pension_er,
+    nssf_t1: result.nssf_t1,
+    nssf_t2: result.nssf_t2,
+    shif: result.shif,
+    ahl: result.ahl,
+    taxable_pay: result.taxable_pay,
+    gross_paye: result.gross_paye,
+    personal_relief: result.personal_relief,
+    nhif_relief: result.nhif_relief,
+    ahl_relief: result.ahl_relief,
+    net_paye: result.net_paye,
+    advances: input.advances,
+    helb: input.helb,
+    company_loan: input.company_loan,
+    bank_loan: input.bank_loan,
+    sacco: input.sacco,
+    allowances: result.allowances,
+    deductions: result.deductions,
+    nssf: result.nssf,
+    nhif: result.nhif,
+    paye: result.paye,
+    net_salary: result.net_salary,
+    total_deductions: result.total_deductions,
+  }
+}
+
+export async function GET() {
+  const supabase = createSupabaseAdminClient()
+
+  if (supabase) {
+    const { data, error } = await supabase.from("employees").select("*").order("name")
+    if (!error && Array.isArray(data)) {
+      return NextResponse.json({ employees: data.map((row) => normalizeEmployeeRow(row as Record<string, unknown>)) })
+    }
+  }
+
+  return NextResponse.json({ employees: initialEmployees })
+}
 
 export async function POST(request: Request) {
   const body = (await request.json()) as {
@@ -69,6 +144,53 @@ export async function POST(request: Request) {
 
   const variance = buildPayrollVarianceReport(payrollRun)
 
+  const supabase = createSupabaseAdminClient()
+  if (supabase) {
+    const { data: runData, error: runError } = await supabase
+      .from("payroll_runs")
+      .upsert({ month, status: "Draft" }, { onConflict: "month" })
+      .select("id")
+      .single()
+
+    if (!runError && runData?.id) {
+      const entries = payrollRun.map((employee) => ({
+        payroll_run_id: runData.id,
+        employee_id: employee.id,
+        basic_salary: employees.find((entry) => entry.id === employee.id)?.base_salary ?? 0,
+        bonus_commission: employees.find((entry) => entry.id === employee.id)?.bonus_commission ?? 0,
+        fringe_benefit: employees.find((entry) => entry.id === employee.id)?.fringe_benefit ?? 0,
+        transport_allowance: employees.find((entry) => entry.id === employee.id)?.transport_allowance ?? 0,
+        arrears: employees.find((entry) => entry.id === employee.id)?.arrears ?? 0,
+        ot_other: employees.find((entry) => entry.id === employee.id)?.ot_other ?? 0,
+        voluntary_pension: employees.find((entry) => entry.id === employee.id)?.voluntary_pension ?? 0,
+        advances: employees.find((entry) => entry.id === employee.id)?.advances ?? 0,
+        helb: employees.find((entry) => entry.id === employee.id)?.helb ?? 0,
+        company_loan: employees.find((entry) => entry.id === employee.id)?.company_loan ?? 0,
+        bank_loan: employees.find((entry) => entry.id === employee.id)?.bank_loan ?? 0,
+        sacco: employees.find((entry) => entry.id === employee.id)?.sacco ?? 0,
+        gross_salary: employee.gross_salary,
+        nssf_t1: employee.nssf_t1,
+        nssf_t2: employee.nssf_t2,
+        shif: employee.shif,
+        ahl: employee.ahl,
+        defined_pension_ee: employee.defined_pension_ee,
+        defined_pension_er: employee.defined_pension_er,
+        taxable_pay: 0,
+        gross_paye: 0,
+        personal_relief: 2400,
+        nhif_relief: 0,
+        ahl_relief: employee.ahl,
+        net_paye: employee.net_paye,
+        total_deductions: employee.gross_salary - employee.net_salary,
+        net_pay: employee.net_salary,
+        employer_pension: employee.defined_pension_er,
+        nita: 50,
+      }))
+
+      await supabase.from("payroll_register_entries").upsert(entries, { onConflict: "payroll_run_id,employee_id" })
+    }
+  }
+
   return NextResponse.json({
     month,
     headcount: payrollRun.length,
@@ -82,5 +204,6 @@ export async function POST(request: Request) {
     },
     variance,
     employees: payrollRun,
+    persistedToSupabase: Boolean(supabase),
   })
 }

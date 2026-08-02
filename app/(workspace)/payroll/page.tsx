@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { useFinOps } from "@/components/finops-provider"
 import { useTheme } from "@/components/theme-provider"
 import {
@@ -295,9 +295,11 @@ function PayslipPanel({ emp, onClose, buttonRadius }: {
 type Tab = "register" | "statutory" | "gl" | "calculator"
 
 export default function PayrollPage() {
-  const { employees, updateEmployee, addAuditLog } = useFinOps()
+  const { addAuditLog } = useFinOps()
   const { cardRadius, buttonRadius, accentBg, accentText, accentBadge } = useTheme()
 
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [loadingEmployees, setLoadingEmployees] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>("register")
   const [payrollSubmitted, setPayrollSubmitted] = useState(false)
   const [activeEmpIdx, setActiveEmpIdx] = useState<number | null>(null)
@@ -313,6 +315,37 @@ export default function PayrollPage() {
     basic: 0, bonus: 0, fbt: 0, transport: 0, arrears: 0, ot: 0,
     voluntary_pension: 0, advances: 0, helb: 0, company_loan: 0, bank_loan: 0, sacco: 0
   })
+
+  useEffect(() => {
+    let ignore = false
+
+    async function loadEmployees() {
+      try {
+        const response = await fetch("/api/payroll")
+        if (!response.ok) {
+          throw new Error("Unable to load employees")
+        }
+
+        const payload = (await response.json()) as { employees?: Employee[] }
+        if (!ignore && Array.isArray(payload.employees)) {
+          setEmployees(payload.employees)
+        }
+      } catch {
+        if (!ignore) {
+          setEmployees([])
+        }
+      } finally {
+        if (!ignore) {
+          setLoadingEmployees(false)
+        }
+      }
+    }
+
+    loadEmployees()
+    return () => {
+      ignore = true
+    }
+  }, [])
 
   // Aggregated data
   const summaries = useMemo(() => employees.map(toSummary), [employees])
@@ -357,14 +390,37 @@ export default function PayrollPage() {
     })
   }
 
-  function submitPayroll() {
-    setPayrollSubmitted(true)
-    addAuditLog(
-      "PAYROLL POSTED",
-      "Statutory PAYE/NSSF/AHL Ledger Run",
-      `Tony approved and posted monthly payroll for ${employees.length} staff. GL posting summary exported. AHL: ${fmt(totals.ahl)}, NSSF: ${fmt(totals.nssf)}, PAYE: ${fmt(totals.paye)}.`,
-      totals.gross
-    )
+  async function submitPayroll() {
+    try {
+      const response = await fetch("/api/payroll", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          month: new Date().toISOString().slice(0, 7),
+          employees,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Payroll save failed")
+      }
+
+      const payload = (await response.json()) as { month?: string }
+      setPayrollSubmitted(true)
+      addAuditLog(
+        "PAYROLL POSTED",
+        payload.month ?? "Statutory PAYE/NSSF/AHL Ledger Run",
+        `Tony approved and posted monthly payroll for ${employees.length} staff. GL posting summary exported. AHL: ${fmt(totals.ahl)}, NSSF: ${fmt(totals.nssf)}, PAYE: ${fmt(totals.paye)}.`,
+        totals.gross
+      )
+    } catch {
+      addAuditLog(
+        "PAYROLL POST FAILED",
+        "Statutory PAYE/NSSF/AHL Ledger Run",
+        `Payroll submission attempt failed for ${employees.length} staff. Please verify the Supabase-backed payroll API is available.`,
+        totals.gross
+      )
+    }
   }
 
   function handleExportRegister() {
@@ -378,7 +434,13 @@ export default function PayrollPage() {
   }
 
   function handleSaveEmployee(emp: Employee) {
-    updateEmployee(emp)
+    setEmployees((prev) => {
+      const updated = prev.some((entry) => entry.id === emp.id)
+        ? prev.map((entry) => (entry.id === emp.id ? emp : entry))
+        : [...prev, emp]
+
+      return updated
+    })
     setShowAddForm(false)
     setEditIdx(null)
   }
@@ -481,6 +543,10 @@ export default function PayrollPage() {
               <Upload className="h-3.5 w-3.5" /><span>Add Employee</span>
             </button>
           </div>
+
+          {loadingEmployees && (
+            <div className="text-[10px] font-mono uppercase text-zinc-400">Loading payroll data from Supabase…</div>
+          )}
 
           {showAddForm && (
             <EmployeeForm

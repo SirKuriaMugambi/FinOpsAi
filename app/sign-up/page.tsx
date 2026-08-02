@@ -2,38 +2,98 @@
 
 import React, { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useFinOps } from "@/components/finops-provider"
+import { useFinOps, UserRole } from "@/components/finops-provider"
 import { useTheme } from "@/components/theme-provider"
+import { createSupabaseBrowserClient } from "@/lib/supabase"
 import Logo from "@/components/logo"
 import Link from "next/link"
-import { ShieldCheck, ArrowRight } from "lucide-react"
+import { ShieldCheck, ArrowRight, AlertCircle, MailCheck } from "lucide-react"
+
+const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
+  { value: "senior_accountant", label: "Senior Accountant" },
+  { value: "finance_manager", label: "Finance Manager" },
+  { value: "production_manager", label: "Production Manager" },
+  { value: "business_controller", label: "Business Controller" },
+]
 
 export default function SignUpPage() {
   const router = useRouter()
-  const { setCurrentUser, addAuditLog } = useFinOps()
+  const { applyAuthProfile, addAuditLog } = useFinOps()
   const { cardRadius, buttonRadius, accentBg, accentText } = useTheme()
 
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [role, setRole] = useState("Senior Accountant")
+  const [role, setRole] = useState<UserRole>("senior_accountant")
+  const [error, setError] = useState<string | null>(null)
+  const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleSignUp = (e: React.FormEvent) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name || !email || !password) return
+    setError(null)
 
-    // Set mock user context
-    setCurrentUser(name)
+    const supabase = createSupabaseBrowserClient()
+    if (!supabase) {
+      setError("Backend is not configured. Contact your system administrator.")
+      return
+    }
 
-    // Append audit log
+    setSubmitting(true)
+    const { data, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: name, role },
+      },
+    })
+    setSubmitting(false)
+
+    if (authError || !data.user) {
+      setError(authError?.message || "Unable to create operator profile.")
+      return
+    }
+
+    // Email confirmation is required before a session is issued — no profile row
+    // exists to log against yet, so redirect to sign-in instead of the dashboard.
+    if (!data.session) {
+      setNeedsEmailConfirmation(true)
+      return
+    }
+
+    applyAuthProfile({ full_name: name, role, email })
+
     addAuditLog(
       "USER SIGN-UP",
-      "Operator Onboarding",
-      `Created new institutional profile for "${name}" with role "${role}". Session started.`
+      "Supabase Auth",
+      `Created new institutional profile for "${name}" with role "${role}". Session started.`,
     )
 
-    // Redirect to main suite
     router.push("/dashboard")
+  }
+
+  if (needsEmailConfirmation) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-50 dark:bg-black p-4 font-sans text-xs antialiased">
+        <div className={`w-full max-w-sm bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-900 p-6 sm:p-8 space-y-6 shadow-xl text-center ${cardRadius}`}>
+          <MailCheck className="h-8 w-8 mx-auto text-emerald-500" />
+          <div className="space-y-2">
+            <p className="text-[12px] font-semibold text-zinc-800 dark:text-zinc-200">Check your email</p>
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              We sent a confirmation link to <span className="font-semibold">{email}</span>. Confirm your address, then sign in.
+            </p>
+          </div>
+          <Link
+            href="/sign-in"
+            className={`inline-flex w-full items-center justify-center gap-1.5 py-2 font-mono text-[10px] uppercase font-bold tracking-wider ${accentBg} ${buttonRadius}`}
+          >
+            <span>Go to Sign In</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -45,6 +105,13 @@ export default function SignUpPage() {
           <Logo className="justify-center" />
           <p className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest pt-2">OPERATIONAL PROFILE REGISTRATION</p>
         </div>
+
+        {error && (
+          <div className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 px-3 py-2 text-[11px]">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
 
         {/* Form */}
         <form onSubmit={handleSignUp} className="space-y-4">
@@ -64,13 +131,14 @@ export default function SignUpPage() {
             <label className="text-[10px] font-mono text-zinc-400 uppercase block">Treasury Role / Designation</label>
             <select
               value={role}
-              onChange={(e) => setRole(e.target.value)}
+              onChange={(e) => setRole(e.target.value as UserRole)}
               className={`w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-400 ${buttonRadius}`}
             >
-              <option value="Senior Accountant">Senior Accountant</option>
-              <option value="Finance Manager">Finance Manager</option>
-              <option value="Production Manager">Production Manager</option>
-              <option value="Business Controller">Business Controller</option>
+              {ROLE_OPTIONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -93,6 +161,7 @@ export default function SignUpPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
+              minLength={6}
               className={`w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-400 ${buttonRadius}`}
               required
             />
@@ -101,9 +170,10 @@ export default function SignUpPage() {
           <div className="pt-2">
             <button
               type="submit"
-              className={`w-full py-2 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center justify-center gap-1.5 ${accentBg} ${buttonRadius}`}
+              disabled={submitting}
+              className={`w-full py-2 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center justify-center gap-1.5 disabled:opacity-50 ${accentBg} ${buttonRadius}`}
             >
-              <span>Onboard Operator</span>
+              <span>{submitting ? "Onboarding…" : "Onboard Operator"}</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>

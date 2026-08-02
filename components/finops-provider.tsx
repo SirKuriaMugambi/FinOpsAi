@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createSupabaseBrowserClient } from "@/lib/supabase";
 import {
   Vendor,
   Invoice,
@@ -22,9 +23,25 @@ import {
   initialDocuments,
 } from "@/lib/seeds";
 
+export type UserRole =
+  | "senior_accountant"
+  | "finance_manager"
+  | "production_manager"
+  | "business_controller";
+
+export interface AuthProfile {
+  full_name: string;
+  role: UserRole;
+  email: string;
+}
+
 interface FinOpsContextType {
   currentUser: string;
-  setCurrentUser: (user: string) => void;
+  currentUserRole: UserRole | null;
+  currentUserEmail: string | null;
+  authLoading: boolean;
+  applyAuthProfile: (profile: AuthProfile) => void;
+  signOut: () => Promise<void>;
   vendors: Vendor[];
   addVendor: (vendor: Vendor) => void;
   updateVendor: (vendor: Vendor) => void;
@@ -63,12 +80,10 @@ interface FinOpsContextType {
 const FinOpsContext = createContext<FinOpsContextType | undefined>(undefined);
 
 export function FinOpsProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUserState] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("finops_user") || "Mercy";
-    }
-    return "Mercy";
-  });
+  const [currentUser, setCurrentUserState] = useState<string>("");
+  const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   const [vendors, setVendors] = useState<Vendor[]>(() => {
     if (typeof window !== "undefined") {
@@ -149,17 +164,67 @@ export function FinOpsProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const setCurrentUser = (user: string) => {
-    setCurrentUserState(user);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("finops_user", user);
+  const applyAuthProfile = useCallback((profile: AuthProfile) => {
+    setCurrentUserState(profile.full_name);
+    setCurrentUserRole(profile.role);
+    setCurrentUserEmail(profile.email);
+  }, []);
+
+  const signOut = useCallback(async () => {
+    const supabase = createSupabaseBrowserClient();
+    if (supabase) {
+      await supabase.auth.signOut();
     }
-    addAuditLog(
-      "USER LOGIN",
-      "Session Change",
-      `${user} switched session context in Nairobi timezone.`,
-    );
-  };
+    setCurrentUserState("");
+    setCurrentUserRole(null);
+    setCurrentUserEmail(null);
+  }, []);
+
+  // Hydrate the signed-in operator's identity from the Supabase session (page refresh,
+  // direct navigation) and keep it in sync across tabs / token refresh.
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      setAuthLoading(false);
+      return;
+    }
+
+    const loadProfile = async (userId: string) => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("full_name, role, email")
+        .eq("id", userId)
+        .single();
+
+      if (data) {
+        applyAuthProfile({
+          full_name: data.full_name,
+          role: data.role as UserRole,
+          email: data.email,
+        });
+      }
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadProfile(session.user.id).finally(() => setAuthLoading(false));
+      } else {
+        setAuthLoading(false);
+      }
+    });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        setCurrentUserState("");
+        setCurrentUserRole(null);
+        setCurrentUserEmail(null);
+      } else if (session?.user) {
+        loadProfile(session.user.id);
+      }
+    });
+
+    return () => subscription.subscription.unsubscribe();
+  }, [applyAuthProfile]);
 
   const addAuditLog = (
     action: string,
@@ -393,7 +458,11 @@ export function FinOpsProvider({ children }: { children: React.ReactNode }) {
     <FinOpsContext.Provider
       value={{
         currentUser,
-        setCurrentUser,
+        currentUserRole,
+        currentUserEmail,
+        authLoading,
+        applyAuthProfile,
+        signOut,
         vendors,
         addVendor,
         updateVendor,
