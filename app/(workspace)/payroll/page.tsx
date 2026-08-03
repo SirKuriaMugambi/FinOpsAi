@@ -1,12 +1,13 @@
 "use client"
 
 import React, { useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import { useFinOps } from "@/components/finops-provider"
 import { useTheme } from "@/components/theme-provider"
 import {
   Wallet, CheckCircle2, FileSpreadsheet, Eye, Printer,
   Download, Upload, ChevronDown, ChevronUp, Building2,
-  Calculator, TrendingUp, Users, DollarSign, X, RotateCcw
+  Calculator, TrendingUp, Users, DollarSign, X, RotateCcw, IdCard
 } from "lucide-react"
 import {
   computePayroll,
@@ -17,6 +18,7 @@ import {
   type EmployeeSummary,
 } from "@/lib/payroll-engine"
 import type { Employee } from "@/lib/seeds"
+import type { ImportPreviewResult } from "@/app/api/payroll/import/route"
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 function fmt(n: number) {
@@ -62,144 +64,6 @@ const BANDS = [
   { label: "500K–800K", rate: "32.5%", range: "500,001 – 800,000" },
   { label: "> 800K", rate: "35%", range: "800,001+" },
 ]
-
-// ── PAYROLL ADD/EDIT FORM ────────────────────────────────────────────────────
-interface EmployeeFormProps {
-  initial?: Employee
-  onSave: (emp: Employee) => void
-  onCancel: () => void
-  cardRadius: string
-  buttonRadius: string
-  accentBg: string
-}
-function EmployeeForm({ initial, onSave, onCancel, cardRadius, buttonRadius, accentBg }: EmployeeFormProps) {
-  const blank: Partial<Employee> = {
-    id: "", name: "", kra_pin: "", grade: "", cost_centre: "511", department: "Production",
-    base_salary: 0, bonus_commission: 0, fringe_benefit: 0, transport_allowance: 0,
-    arrears: 0, ot_other: 0, voluntary_pension: 0,
-    advances: 0, helb: 0, company_loan: 0, bank_loan: 0, sacco: 0,
-  }
-  const [form, setForm] = useState<Partial<Employee>>(initial ?? blank)
-
-  function handle(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
-    const { name, value } = e.target
-    const num = ["base_salary","bonus_commission","fringe_benefit","transport_allowance",
-                  "arrears","ot_other","voluntary_pension","advances","helb",
-                  "company_loan","bank_loan","sacco"]
-    setForm(f => ({ ...f, [name]: num.includes(name) ? parseFloat(value) || 0 : value }))
-  }
-
-  function save() {
-    const inputs = {
-      base_salary: form.base_salary ?? 0,
-      bonus_commission: form.bonus_commission ?? 0,
-      fringe_benefit: form.fringe_benefit ?? 0,
-      transport_allowance: form.transport_allowance ?? 0,
-      arrears: form.arrears ?? 0,
-      ot_other: form.ot_other ?? 0,
-      voluntary_pension: form.voluntary_pension ?? 0,
-      advances: form.advances ?? 0,
-      helb: form.helb ?? 0,
-      company_loan: form.company_loan ?? 0,
-      bank_loan: form.bank_loan ?? 0,
-      sacco: form.sacco ?? 0,
-    }
-    const computed = computePayroll(inputs)
-    const full: Employee = {
-      id: form.id ?? "", name: form.name ?? "", kra_pin: form.kra_pin ?? "",
-      grade: form.grade ?? "", cost_centre: form.cost_centre ?? "511",
-      department: form.department ?? "Production",
-      ...inputs, ...computed,
-    }
-    onSave(full)
-  }
-
-  const F = ({ label, name: n, type = "number" }: { label: string; name: string; type?: string }) => (
-    <div className="space-y-0.5">
-      <label className="text-[9px] font-mono uppercase text-zinc-400">{label}</label>
-      <input
-        name={n} type={type}
-        value={(form as Record<string, unknown>)[n] as string ?? ""}
-        onChange={handle}
-        className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 rounded"
-      />
-    </div>
-  )
-
-  return (
-    <div className={`p-5 border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 space-y-4 ${cardRadius}`}>
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-mono uppercase tracking-wider font-bold">
-          {initial ? "Edit Employee" : "Add Employee"}
-        </h3>
-        <button onClick={onCancel} className="text-zinc-400 hover:text-zinc-600"><X className="h-4 w-4" /></button>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <F label="Staff No" name="id" type="text" />
-        <F label="Name" name="name" type="text" />
-        <F label="KRA PIN" name="kra_pin" type="text" />
-        <F label="Grade" name="grade" type="text" />
-        <div className="space-y-0.5">
-          <label className="text-[9px] font-mono uppercase text-zinc-400">Cost Centre</label>
-          <select name="cost_centre" value={form.cost_centre ?? "511"} onChange={handle}
-            className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] font-mono focus:outline-none rounded">
-            <option value="121">121 — Finance</option>
-            <option value="204">204 — Technical (TC)</option>
-            <option value="205">205 — General Manager</option>
-            <option value="206">206 — Technical Assistants</option>
-            <option value="511">511 — Production</option>
-            <option value="512">512 — Production-OH</option>
-          </select>
-        </div>
-        <div className="space-y-0.5">
-          <label className="text-[9px] font-mono uppercase text-zinc-400">Department</label>
-          <select name="department" value={form.department ?? "Production"} onChange={handle}
-            className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] font-mono focus:outline-none rounded">
-            <option>Finance</option>
-            <option>Technical</option>
-            <option>General Manager</option>
-            <option>Production</option>
-            <option>Production-OH</option>
-          </select>
-        </div>
-      </div>
-
-      <p className="text-[9px] font-mono uppercase text-zinc-400 pt-1 border-t dark:border-zinc-800">Earnings</p>
-      <div className="grid grid-cols-2 gap-3">
-        <F label="Basic Salary" name="base_salary" />
-        <F label="Bonus / Commission" name="bonus_commission" />
-        <F label="Fringe Benefit (FBT)" name="fringe_benefit" />
-        <F label="Transport Allowance" name="transport_allowance" />
-        <F label="Arrears" name="arrears" />
-        <F label="OT / Other" name="ot_other" />
-      </div>
-
-      <p className="text-[9px] font-mono uppercase text-zinc-400 pt-1 border-t dark:border-zinc-800">Deductions (Post-Tax)</p>
-      <div className="grid grid-cols-2 gap-3">
-        <F label="Voluntary Pension" name="voluntary_pension" />
-        <F label="Advances" name="advances" />
-        <F label="HELB" name="helb" />
-        <F label="Company Loan" name="company_loan" />
-        <F label="Bank Loan" name="bank_loan" />
-        <F label="SACCO" name="sacco" />
-      </div>
-
-      <p className="text-[9px] text-zinc-400 font-mono">
-        Statutory items (NSSF, SHIF, AHL, PAYE) are computed automatically from earnings.
-      </p>
-
-      <div className="flex gap-2 pt-2">
-        <button onClick={save} className={`flex-1 py-2 font-mono text-[10px] uppercase tracking-wider font-bold ${accentBg} rounded`}>
-          {initial ? "Update & Recalculate" : "Add & Calculate"}
-        </button>
-        <button onClick={onCancel} className="px-4 py-2 border border-zinc-200 dark:border-zinc-800 font-mono text-[10px] uppercase rounded">
-          Cancel
-        </button>
-      </div>
-    </div>
-  )
-}
 
 // ── PAYSLIP PANEL ────────────────────────────────────────────────────────────
 function PayslipPanel({ emp, onClose, buttonRadius }: {
@@ -294,21 +158,35 @@ function PayslipPanel({ emp, onClose, buttonRadius }: {
 // ── MAIN PAGE ────────────────────────────────────────────────────────────────
 type Tab = "register" | "statutory" | "gl" | "calculator"
 
+type RunStatus = "Draft" | "Submitted" | "Approved" | "Rejected" | "Posted" | null
+
 export default function PayrollPage() {
-  const { addAuditLog } = useFinOps()
+  const { addAuditLog, currentUserRole } = useFinOps()
   const { cardRadius, buttonRadius, accentBg, accentText, accentBadge } = useTheme()
 
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loadingEmployees, setLoadingEmployees] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>("register")
-  const [payrollSubmitted, setPayrollSubmitted] = useState(false)
+  const [runStatus, setRunStatus] = useState<RunStatus>(null)
+  const [workflowBusy, setWorkflowBusy] = useState(false)
+  const [workflowError, setWorkflowError] = useState<string | null>(null)
   const [activeEmpIdx, setActiveEmpIdx] = useState<number | null>(null)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [editIdx, setEditIdx] = useState<number | null>(null)
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
   const [payMonth] = useState(() =>
     new Date().toLocaleString("en-KE", { month: "long", year: "numeric" })
   )
+  const apiMonth = useMemo(() => new Date().toISOString().slice(0, 7), [])
+
+  // AX journal posting state
+  const [postingToAx, setPostingToAx] = useState(false)
+  const [axJournal, setAxJournal] = useState<{
+    lines: Array<{ lineNumber: number; accountCode: string; accountName: string; debit: number; credit: number; dimension: { department: string; costCentre: string }; description: string }>
+    totalDebit: number
+    totalCredit: number
+    isBalanced: boolean
+  } | null>(null)
+  const [axResult, setAxResult] = useState<{ success: boolean; isMock: boolean; journalNumber: string; message: string } | null>(null)
+  const [axError, setAxError] = useState<string | null>(null)
 
   // Calculator state
   const [calcInputs, setCalcInputs] = useState({
@@ -316,19 +194,25 @@ export default function PayrollPage() {
     voluntary_pension: 0, advances: 0, helb: 0, company_loan: 0, bank_loan: 0, sacco: 0
   })
 
+  // Variable-pay import (One-Click Calculation) state
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importPreview, setImportPreview] = useState<ImportPreviewResult | null>(null)
+
   useEffect(() => {
     let ignore = false
 
     async function loadEmployees() {
       try {
-        const response = await fetch("/api/payroll")
+        const response = await fetch(`/api/payroll?month=${apiMonth}`)
         if (!response.ok) {
           throw new Error("Unable to load employees")
         }
 
-        const payload = (await response.json()) as { employees?: Employee[] }
+        const payload = (await response.json()) as { employees?: Employee[]; run?: { status: RunStatus } | null }
         if (!ignore && Array.isArray(payload.employees)) {
           setEmployees(payload.employees)
+          setRunStatus(payload.run?.status ?? null)
         }
       } catch {
         if (!ignore) {
@@ -390,36 +274,119 @@ export default function PayrollPage() {
     })
   }
 
-  async function submitPayroll() {
+  async function handleImportFile(file: File) {
+    setImporting(true)
+    setImportError(null)
+    setImportPreview(null)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const response = await fetch("/api/payroll/import", { method: "POST", body: formData })
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to parse the uploaded workbook")
+      }
+      setImportPreview(payload as ImportPreviewResult)
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Failed to import workbook")
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  // Merge confirmed variable-pay values from the import preview into the
+  // in-memory employee register (matched staff only — unmatched rows need
+  // to go through the Master Data Hub first, since a payroll run can't
+  // introduce a brand-new employee identity by itself).
+  function applyImportPreview() {
+    if (!importPreview) return
+    setEmployees((prev) =>
+      prev.map((emp) => {
+        const match = importPreview.matched.find((m) => m.parsed.id === emp.id)
+        if (!match) return emp
+        const inputs = {
+          base_salary: match.parsed.baseSalary,
+          bonus_commission: match.parsed.bonusCommission,
+          fringe_benefit: match.parsed.fringeBenefit,
+          transport_allowance: match.parsed.transportAllowance,
+          arrears: match.parsed.arrears,
+          ot_other: match.parsed.otOther,
+          voluntary_pension: emp.voluntary_pension,
+          advances: emp.advances,
+          helb: emp.helb,
+          company_loan: emp.company_loan,
+          bank_loan: emp.bank_loan,
+          sacco: emp.sacco,
+          personal_relief_override: emp.personal_relief_override ?? undefined,
+          excludeNssfFromPayeBands: emp.exclude_nssf_from_paye_bands,
+        }
+        const computed = computePayroll(inputs)
+        return { ...emp, ...inputs, ...computed }
+      })
+    )
+    addAuditLog(
+      "PAYROLL VARIABLE-PAY IMPORTED",
+      `${importPreview.matched.length} staff`,
+      `Imported variable pay for ${importPreview.matched.length} matched staff (${importPreview.unmatched.length} unmatched, ${importPreview.skipped.length} rows skipped).`,
+    )
+    setImportPreview(null)
+  }
+
+  // Computes and saves this month's run (always lands as "Draft" — see
+  // POST /api/payroll). This can be re-run freely to correct a Draft.
+  async function computeAndSaveRun() {
     try {
       const response = await fetch("/api/payroll", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          month: new Date().toISOString().slice(0, 7),
-          employees,
-        }),
+        body: JSON.stringify({ month: apiMonth, employees }),
       })
 
       if (!response.ok) {
         throw new Error("Payroll save failed")
       }
 
-      const payload = (await response.json()) as { month?: string }
-      setPayrollSubmitted(true)
+      setRunStatus("Draft")
       addAuditLog(
-        "PAYROLL POSTED",
-        payload.month ?? "Statutory PAYE/NSSF/AHL Ledger Run",
-        `Tony approved and posted monthly payroll for ${employees.length} staff. GL posting summary exported. AHL: ${fmt(totals.ahl)}, NSSF: ${fmt(totals.nssf)}, PAYE: ${fmt(totals.paye)}.`,
+        "PAYROLL COMPUTED",
+        apiMonth,
+        `Computed and saved a Draft payroll run for ${employees.length} staff. Gross: ${fmt(totals.gross)}, PAYE: ${fmt(totals.paye)}.`,
         totals.gross
       )
     } catch {
       addAuditLog(
-        "PAYROLL POST FAILED",
-        "Statutory PAYE/NSSF/AHL Ledger Run",
-        `Payroll submission attempt failed for ${employees.length} staff. Please verify the Supabase-backed payroll API is available.`,
+        "PAYROLL COMPUTE FAILED",
+        apiMonth,
+        `Payroll computation attempt failed for ${employees.length} staff. Please verify the Supabase-backed payroll API is available.`,
         totals.gross
       )
+    }
+  }
+
+  async function runWorkflowAction(action: "submit" | "approve" | "reject") {
+    setWorkflowBusy(true)
+    setWorkflowError(null)
+    try {
+      const response = await fetch(`/api/payroll/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: apiMonth }),
+      })
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error ?? `Failed to ${action} the payroll run.`)
+      }
+      setRunStatus(payload.run.status)
+      addAuditLog(
+        `PAYROLL ${action.toUpperCase()}D`,
+        apiMonth,
+        `Payroll run for ${apiMonth} moved to status "${payload.run.status}".`,
+        totals.gross
+      )
+    } catch (err) {
+      setWorkflowError(err instanceof Error ? err.message : `Failed to ${action} the payroll run.`)
+    } finally {
+      setWorkflowBusy(false)
     }
   }
 
@@ -433,16 +400,67 @@ export default function PayrollPage() {
     downloadCSV(csv, `chrysal-ax-gl-posting-${payMonth.replace(" ", "-")}.csv`)
   }
 
-  function handleSaveEmployee(emp: Employee) {
-    setEmployees((prev) => {
-      const updated = prev.some((entry) => entry.id === emp.id)
-        ? prev.map((entry) => (entry.id === emp.id ? emp : entry))
-        : [...prev, emp]
+  async function handlePostToAx() {
+    setPostingToAx(true)
+    setAxError(null)
+    try {
+      const response = await fetch("/api/payroll/post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: apiMonth }),
+      })
 
-      return updated
-    })
-    setShowAddForm(false)
-    setEditIdx(null)
+      const payload = await response.json()
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to build/post the AX journal.")
+      }
+
+      setAxJournal(payload.journal)
+      setAxResult(payload.axResult)
+      addAuditLog(
+        "AX JOURNAL POSTED",
+        payload.axResult?.journalNumber ?? apiMonth,
+        payload.axResult?.isMock
+          ? `Payroll journal for ${apiMonth} built and posted to a MOCKED Dynamics AX response (${payload.axResult.message})`
+          : `Payroll journal for ${apiMonth} posted to Dynamics AX. Journal: ${payload.axResult?.journalNumber}`,
+        payload.journal?.totalDebit,
+      )
+    } catch (err) {
+      setAxError(err instanceof Error ? err.message : "Unknown error posting to AX.")
+    } finally {
+      setPostingToAx(false)
+    }
+  }
+
+  // One-click generation — payslips (PDF), bank batch file, and iTax export.
+  // All three are gated server-side to Approved/Posted runs and downloaded
+  // as file attachments; this just triggers the browser download and logs it.
+  async function handleGenerate(kind: "payslips" | "bank-batch" | "itax-export") {
+    const routeByKind = {
+      payslips: { path: "/api/payroll/payslips", ext: "pdf", label: "Payslips" },
+      "bank-batch": { path: "/api/payroll/bank-batch", ext: "csv", label: "Bank Batch File" },
+      "itax-export": { path: "/api/payroll/itax-export", ext: "csv", label: "iTax Export" },
+    }[kind]
+    try {
+      const response = await fetch(`${routeByKind.path}?month=${apiMonth}`)
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload.error ?? `Failed to generate ${routeByKind.label}.`)
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url; a.download = `chrysal-${kind}-${apiMonth}.${routeByKind.ext}`; a.click()
+      URL.revokeObjectURL(url)
+      addAuditLog(
+        `PAYROLL ${routeByKind.label.toUpperCase()} GENERATED`,
+        apiMonth,
+        `Generated ${routeByKind.label} for the ${apiMonth} payroll run (${employees.length} staff).`,
+      )
+    } catch (err) {
+      setWorkflowError(err instanceof Error ? err.message : `Failed to generate ${routeByKind.label}.`)
+    }
   }
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -463,15 +481,62 @@ export default function PayrollPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
-          {!payrollSubmitted ? (
-            <button
-              onClick={submitPayroll}
-              className={`px-3 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 ${accentBg} ${buttonRadius}`}
-            >
+          {(runStatus === null || runStatus === "Draft") && (
+            <>
+              <button
+                onClick={computeAndSaveRun}
+                className={`px-3 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 ${buttonRadius}`}
+              >
+                <Calculator className="h-3.5 w-3.5" /><span>Run Payroll</span>
+              </button>
+              <button
+                onClick={() => runWorkflowAction("submit")}
+                disabled={workflowBusy}
+                className={`px-3 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 disabled:opacity-50 ${accentBg} ${buttonRadius}`}
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>Submit for Approval</span>
+              </button>
+            </>
+          )}
+          {runStatus === "Submitted" && (
+            currentUserRole === "finance_manager" ? (
+              <>
+                <button
+                  onClick={() => runWorkflowAction("approve")}
+                  disabled={workflowBusy}
+                  className={`px-3 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 disabled:opacity-50 ${accentBg} ${buttonRadius}`}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" /><span>Approve</span>
+                </button>
+                <button
+                  onClick={() => runWorkflowAction("reject")}
+                  disabled={workflowBusy}
+                  className="px-3 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950/30 disabled:opacity-50 rounded"
+                >
+                  <X className="h-3.5 w-3.5" /><span>Reject</span>
+                </button>
+              </>
+            ) : (
+              <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-mono text-[10px] border border-amber-200 bg-amber-50/20 px-2 py-1">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>PENDING FINANCE MANAGER APPROVAL</span>
+              </span>
+            )
+          )}
+          {runStatus === "Rejected" && (
+            <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-mono text-[10px] border border-rose-200 bg-rose-50/20 px-2 py-1">
+              <X className="h-3.5 w-3.5" />
+              <span>REJECTED — RE-RUN AND RESUBMIT</span>
+            </span>
+          )}
+          {runStatus === "Approved" && (
+            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] border border-emerald-200 bg-emerald-50/20 px-2 py-1">
               <CheckCircle2 className="h-3.5 w-3.5" />
-              <span>Approve &amp; Post</span>
-            </button>
-          ) : (
+              <span>APPROVED — READY TO POST</span>
+            </span>
+          )}
+          {runStatus === "Posted" && (
             <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-mono text-[10px] border border-emerald-200 bg-emerald-50/20 px-2 py-1">
               <CheckCircle2 className="h-3.5 w-3.5" />
               <span>POSTED TO LEDGER</span>
@@ -491,6 +556,12 @@ export default function PayrollPage() {
           </button>
         </div>
       </div>
+
+      {workflowError && (
+        <div className="p-3 border border-rose-200 bg-rose-50/40 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900 text-[11px]">
+          {workflowError}
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -536,37 +607,73 @@ export default function PayrollPage() {
               <Users className="h-4 w-4 text-zinc-400" />
               <span className="text-xs font-mono uppercase tracking-wider font-bold">Employee Payroll Register — {payMonth}</span>
             </div>
-            <button
-              onClick={() => setShowAddForm(true)}
-              className={`px-2.5 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 ${buttonRadius}`}
-            >
-              <Upload className="h-3.5 w-3.5" /><span>Add Employee</span>
-            </button>
+            <div className="flex gap-2">
+              <label
+                className={`px-2.5 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 cursor-pointer ${buttonRadius} ${importing ? "opacity-50 pointer-events-none" : ""}`}
+              >
+                <Upload className="h-3.5 w-3.5" /><span>{importing ? "Parsing…" : "Import Variable Pay"}</span>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) handleImportFile(file)
+                    e.target.value = ""
+                  }}
+                />
+              </label>
+              <Link
+                href="/employees"
+                className={`px-2.5 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 ${buttonRadius}`}
+              >
+                <IdCard className="h-3.5 w-3.5" /><span>Manage Employees</span>
+              </Link>
+            </div>
           </div>
 
           {loadingEmployees && (
             <div className="text-[10px] font-mono uppercase text-zinc-400">Loading payroll data from Supabase…</div>
           )}
 
-          {showAddForm && (
-            <EmployeeForm
-              onSave={handleSaveEmployee}
-              onCancel={() => setShowAddForm(false)}
-              cardRadius={cardRadius}
-              buttonRadius={buttonRadius}
-              accentBg={accentBg}
-            />
+          {importError && (
+            <div className="p-3 border border-rose-200 bg-rose-50/40 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900 text-[11px]">
+              {importError}
+            </div>
           )}
 
-          {editIdx !== null && (
-            <EmployeeForm
-              initial={employees[editIdx]}
-              onSave={handleSaveEmployee}
-              onCancel={() => setEditIdx(null)}
-              cardRadius={cardRadius}
-              buttonRadius={buttonRadius}
-              accentBg={accentBg}
-            />
+          {importPreview && (
+            <div className={`p-5 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 space-y-3 ${cardRadius}`}>
+              <div className="flex items-center justify-between border-b dark:border-zinc-900 pb-2">
+                <h3 className="text-xs font-mono uppercase tracking-wider font-bold">Import Preview</h3>
+                <button onClick={() => setImportPreview(null)} className="text-zinc-400 hover:text-zinc-600"><X className="h-4 w-4" /></button>
+              </div>
+              <div className="grid grid-cols-3 gap-3 font-mono text-[10px]">
+                <div className="text-emerald-600">{importPreview.matched.length} matched</div>
+                <div className="text-amber-500">{importPreview.unmatched.length} unmatched (not in Employee Master)</div>
+                <div className="text-zinc-400">{importPreview.skipped.length} rows skipped</div>
+              </div>
+              {importPreview.unmatched.length > 0 && (
+                <p className="text-[9px] font-mono text-amber-500">
+                  Unmatched staff numbers won&apos;t be applied — add them via Manage Employees first, then re-import.
+                </p>
+              )}
+              <div className="max-h-40 overflow-y-auto border-t dark:border-zinc-900 pt-2 text-[10px] font-mono space-y-1">
+                {importPreview.matched.map((m) => (
+                  <div key={m.parsed.id} className="flex justify-between text-zinc-500">
+                    <span>{m.parsed.id} · {m.existingName}</span>
+                    <span>Basic {fmt(m.parsed.baseSalary)}</span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={applyImportPreview}
+                disabled={importPreview.matched.length === 0}
+                className={`w-full py-2 font-mono text-[10px] uppercase tracking-wider font-bold disabled:opacity-50 ${accentBg} ${buttonRadius}`}
+              >
+                Apply {importPreview.matched.length} Matched Rows to Register
+              </button>
+            </div>
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -611,7 +718,7 @@ export default function PayrollPage() {
                             <td className="px-4 py-3">
                               <div className="flex items-center justify-center gap-1">
                                 <button
-                                  onClick={() => { setActiveEmpIdx(idx); setEditIdx(null) }}
+                                  onClick={() => setActiveEmpIdx(idx)}
                                   className={`p-1 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 ${buttonRadius}`}
                                   title="View payslip"
                                 >
@@ -924,6 +1031,120 @@ export default function PayrollPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+
+          {/* AX Journal Preview & Post */}
+          <div className={`p-5 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 space-y-4 ${cardRadius}`}>
+            <div className="flex items-center justify-between border-b dark:border-zinc-900 pb-2">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-zinc-400" />
+                <h3 className="text-xs font-mono uppercase tracking-wider font-bold">Dynamics AX Journal (Preview / Post)</h3>
+              </div>
+              <button
+                onClick={handlePostToAx}
+                disabled={runStatus !== "Approved" || postingToAx}
+                title={runStatus !== "Approved" ? "The run must be Submitted and Approved by the finance manager first" : undefined}
+                className={`px-3 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed ${accentBg} ${buttonRadius}`}
+              >
+                <Upload className="h-3.5 w-3.5" />
+                <span>{postingToAx ? "Building & Posting…" : "Post to AX (Dynamics)"}</span>
+              </button>
+            </div>
+
+            {runStatus !== "Approved" && (
+              <p className="text-[10px] font-mono text-zinc-400">
+                Run Payroll, Submit for Approval, and have the finance manager Approve it above first — the journal
+                is built from this month&apos;s saved payroll register entries.
+              </p>
+            )}
+
+            {axError && (
+              <div className="p-3 border border-rose-200 bg-rose-50/40 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900 text-[11px]">
+                {axError}
+              </div>
+            )}
+
+            {axResult && (
+              <div className={`p-3 border text-[11px] flex items-center gap-2 ${
+                axResult.success
+                  ? "border-emerald-200 bg-emerald-50/40 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900"
+                  : "border-rose-200 bg-rose-50/40 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900"
+              }`}>
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <div>
+                  <p className="font-bold font-mono">
+                    {axResult.isMock ? "MOCKED — " : ""}Journal {axResult.journalNumber}
+                  </p>
+                  <p>{axResult.message}</p>
+                </div>
+              </div>
+            )}
+
+            {axJournal && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-[10px] font-mono">
+                  <thead>
+                    <tr className="border-b border-zinc-150 dark:border-zinc-900 text-zinc-400 uppercase tracking-wider">
+                      <th className="py-1.5 pr-2">#</th>
+                      <th className="py-1.5 pr-2">Account</th>
+                      <th className="py-1.5 pr-2">Dimension (Dept/CC)</th>
+                      <th className="py-1.5 pr-2 text-right">Debit</th>
+                      <th className="py-1.5 text-right">Credit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
+                    {axJournal.lines.map((line) => (
+                      <tr key={line.lineNumber}>
+                        <td className="py-1.5 pr-2 text-zinc-400">{line.lineNumber}</td>
+                        <td className="py-1.5 pr-2">
+                          <span className="font-semibold">{line.accountCode}</span>
+                          <span className="block text-zinc-400 text-[9px]">{line.accountName}</span>
+                        </td>
+                        <td className="py-1.5 pr-2 text-zinc-500">{line.dimension.department}/{line.dimension.costCentre}</td>
+                        <td className="py-1.5 pr-2 text-right">{line.debit > 0 ? fmtD(line.debit) : "—"}</td>
+                        <td className="py-1.5 text-right">{line.credit > 0 ? fmtD(line.credit) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 dark:border-zinc-700 font-bold">
+                      <td colSpan={3} className="py-2">Total {axJournal.isBalanced ? "(Balanced ✓)" : "(NOT BALANCED ✗)"}</td>
+                      <td className="py-2 text-right">{fmtD(axJournal.totalDebit)}</td>
+                      <td className="py-2 text-right">{fmtD(axJournal.totalCredit)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* One-Click Generation */}
+          <div className={`p-5 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 space-y-3 ${cardRadius}`}>
+            <div className="flex items-center gap-2 border-b dark:border-zinc-900 pb-2">
+              <FileSpreadsheet className="h-4 w-4 text-zinc-400" />
+              <h3 className="text-xs font-mono uppercase tracking-wider font-bold">One-Click Generation</h3>
+            </div>
+            <p className="text-[9px] font-mono text-amber-500">
+              Bank batch file and iTax export use placeholder formats pending the real bank template and KRA iTax
+              template — see the file header comments in lib/bank-batch-builder.ts and lib/itax-export-builder.ts.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {([
+                ["payslips", "Generate Payslips (PDF)"],
+                ["bank-batch", "Generate Bank Batch File"],
+                ["itax-export", "Generate iTax Export"],
+              ] as const).map(([kind, label]) => (
+                <button
+                  key={kind}
+                  onClick={() => handleGenerate(kind)}
+                  disabled={runStatus !== "Approved" && runStatus !== "Posted"}
+                  title={runStatus !== "Approved" && runStatus !== "Posted" ? "The run must be Approved first" : undefined}
+                  className={`px-3 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 ${buttonRadius}`}
+                >
+                  <Download className="h-3.5 w-3.5" /><span>{label}</span>
+                </button>
+              ))}
             </div>
           </div>
         </div>

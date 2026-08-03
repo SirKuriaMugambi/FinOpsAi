@@ -6,7 +6,7 @@ import { useTheme } from "@/components/theme-provider"
 import { Percent, CheckSquare, Download, AlertTriangle, CheckCircle, FileText, Globe } from "lucide-react"
 
 export default function WHTCalculatorPage() {
-  const { whtPayments, fileWhtPayments, invoices } = useFinOps()
+  const { whtPayments, fileWhtPayments, invoices, vendors } = useFinOps()
   const { cardRadius, buttonRadius, accentBg, accentText, accentBadge } = useTheme()
 
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -22,11 +22,12 @@ export default function WHTCalculatorPage() {
         const exchange = inv.kra_rate || 1.0
         const subtotalKES = inv.subtotal * (inv.currency === "KES" ? 1 : exchange)
         const whtKES = subtotalKES * rateVal
+        const vendor = vendors.find(v => v.vendor_id === inv.vendor_id)
 
         return {
           id: `WHT-COMP-${inv.id}`,
           vendor_name: inv.vendor_name,
-          vendor_pin: "P0511" + Math.floor(100000 + Math.random() * 900000) + "A",
+          vendor_pin: vendor?.tax_id_pin || "PIN NOT ON FILE",
           cu_invoice_number: inv.cu_invoice_number,
           invoice_date: inv.invoice_date,
           payment_date: inv.due_date,
@@ -37,7 +38,7 @@ export default function WHTCalculatorPage() {
           status: "Calculated" as const
         }
       })
-  }, [invoices, whtPayments])
+  }, [invoices, whtPayments, vendors])
 
   const allWhtPayments = useMemo(() => {
     return [...whtPayments, ...pendingInvoicesWht]

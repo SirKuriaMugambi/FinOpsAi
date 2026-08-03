@@ -12,15 +12,9 @@ import {
   AuditLog,
   BudgetItem,
   Document,
-  initialVendors,
-  initialInvoices,
-  initialWhtPayments,
   initialGLAccounts,
   initialEmployees,
-  initialChecklist,
   initialBudgets,
-  initialAuditTrail,
-  initialDocuments,
 } from "@/lib/seeds";
 
 export type UserRole =
@@ -65,7 +59,7 @@ interface FinOpsContextType {
   budgets: BudgetItem[];
   updateBudgetActual: (id: string, actual: number) => void;
   documents: Document[];
-  uploadDocument: (doc: Document) => void;
+  uploadDocument: (file: File, tag: Document["tag"], displayName?: string) => Promise<void>;
   deleteDocument: (id: string, reason: string) => void;
   auditTrail: AuditLog[];
   addAuditLog: (
@@ -79,36 +73,27 @@ interface FinOpsContextType {
 
 const FinOpsContext = createContext<FinOpsContextType | undefined>(undefined);
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function FinOpsProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUserState] = useState<string>("");
   const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  const [vendors, setVendors] = useState<Vendor[]>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("finops_vendors");
-      return stored ? JSON.parse(stored) : initialVendors;
-    }
-    return initialVendors;
-  });
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [whtPayments, setWhtPayments] = useState<WhtPayment[]>([]);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [auditTrail, setAuditTrail] = useState<AuditLog[]>([]);
 
-  const [invoices, setInvoices] = useState<Invoice[]>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("finops_invoices");
-      return stored ? JSON.parse(stored) : initialInvoices;
-    }
-    return initialInvoices;
-  });
-
-  const [whtPayments, setWhtPayments] = useState<WhtPayment[]>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("finops_wht");
-      return stored ? JSON.parse(stored) : initialWhtPayments;
-    }
-    return initialWhtPayments;
-  });
-
+  // These tables are out of scope for the current backend migration (no page
+  // in this pass reads/writes them) — kept on local mock state for now.
   const [glAccounts, setGlAccounts] = useState<GLAccount[]>(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("finops_gl");
@@ -116,7 +101,6 @@ export function FinOpsProvider({ children }: { children: React.ReactNode }) {
     }
     return initialGLAccounts;
   });
-
   const [employees, setEmployees] = useState<Employee[]>(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("finops_employees");
@@ -124,15 +108,6 @@ export function FinOpsProvider({ children }: { children: React.ReactNode }) {
     }
     return initialEmployees;
   });
-
-  const [checklist, setChecklist] = useState<ChecklistItem[]>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("finops_checklist");
-      return stored ? JSON.parse(stored) : initialChecklist;
-    }
-    return initialChecklist;
-  });
-
   const [budgets, setBudgets] = useState<BudgetItem[]>(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("finops_budgets");
@@ -141,23 +116,6 @@ export function FinOpsProvider({ children }: { children: React.ReactNode }) {
     return initialBudgets;
   });
 
-  const [documents, setDocuments] = useState<Document[]>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("finops_docs");
-      return stored ? JSON.parse(stored) : initialDocuments;
-    }
-    return initialDocuments;
-  });
-
-  const [auditTrail, setAuditTrail] = useState<AuditLog[]>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("finops_audit");
-      return stored ? JSON.parse(stored) : initialAuditTrail;
-    }
-    return initialAuditTrail;
-  });
-
-  // Sync utilities
   const sync = (key: string, data: unknown) => {
     if (typeof window !== "undefined") {
       localStorage.setItem(key, JSON.stringify(data));
@@ -226,138 +184,275 @@ export function FinOpsProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.subscription.unsubscribe();
   }, [applyAuthProfile]);
 
-  const addAuditLog = (
-    action: string,
-    docRef: string,
-    details: string,
-    amount?: number,
-  ) => {
-    const timeInNairobi = new Date().toLocaleString("en-US", {
-      timeZone: "Africa/Nairobi",
-    });
-    const formattedTime = new Date(timeInNairobi)
-      .toISOString()
-      .replace("T", " ")
-      .substring(0, 19);
+  // Load real data from Supabase once the auth session state is known (RLS
+  // returns zero rows for the `anon` role, so fetching before auth resolves
+  // would just mean an extra empty round trip).
+  useEffect(() => {
+    if (authLoading) return;
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) return;
 
-    const newLog: AuditLog = {
-      id: `AUD-${Math.floor(100000 + Math.random() * 900000)}`,
-      timestamp: formattedTime,
-      user: currentUser,
-      action,
-      document_ref: docRef,
-      details,
-      amount,
-    };
+    (async () => {
+      const [
+        vendorsRes,
+        invoicesRes,
+        whtRes,
+        checklistRes,
+        documentsRes,
+        auditRes,
+      ] = await Promise.all([
+        supabase.from("vendors").select("*").order("name"),
+        supabase.from("invoices").select("*").order("created_at", { ascending: false }),
+        supabase.from("wht_payments").select("*").order("created_at", { ascending: false }),
+        supabase.from("checklist_items").select("*").order("id"),
+        supabase
+          .from("documents")
+          .select("*")
+          .eq("is_deleted", false)
+          .order("uploaded_at", { ascending: false }),
+        supabase.from("audit_logs").select("*").order("timestamp", { ascending: false }),
+      ]);
 
-    setAuditTrail((prev) => {
-      const updated = [newLog, ...prev];
-      sync("finops_audit", updated);
-      return updated;
-    });
-  };
+      if (vendorsRes.data) setVendors(vendorsRes.data as Vendor[]);
+      if (invoicesRes.data) setInvoices(invoicesRes.data as Invoice[]);
+      if (whtRes.data) setWhtPayments(whtRes.data as WhtPayment[]);
+      if (checklistRes.data) setChecklist(checklistRes.data as ChecklistItem[]);
+      if (documentsRes.data) {
+        setDocuments(
+          documentsRes.data.map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            tag: d.tag,
+            uploaded_by: d.uploaded_by,
+            uploaded_at: d.uploaded_at,
+            size: formatBytes(d.size),
+            storage_path: d.storage_path,
+          })),
+        );
+      }
+      if (auditRes.data) {
+        setAuditTrail(
+          auditRes.data.map((a: any) => ({
+            id: a.id,
+            timestamp: a.timestamp,
+            user: a.operator_user,
+            action: a.action,
+            document_ref: a.document_ref,
+            details: a.details,
+            amount: a.amount ?? undefined,
+          })),
+        );
+      }
+    })();
+  }, [authLoading]);
 
-  const addVendor = (vendor: Vendor) => {
-    setVendors((prev) => {
-      const updated = [...prev, vendor];
-      sync("finops_vendors", updated);
-      return updated;
-    });
-    addAuditLog(
-      "VENDOR ADDED",
-      vendor.vendor_id,
-      `Created new vendor ${vendor.name} (${vendor.tax_id_pin})`,
-    );
-  };
+  const addAuditLog = useCallback(
+    (action: string, docRef: string, details: string, amount?: number) => {
+      const timeInNairobi = new Date().toLocaleString("en-US", {
+        timeZone: "Africa/Nairobi",
+      });
+      const formattedTime = new Date(timeInNairobi)
+        .toISOString()
+        .replace("T", " ")
+        .substring(0, 19);
 
-  const updateVendor = (vendor: Vendor) => {
-    setVendors((prev) => {
-      const updated = prev.map((v) =>
-        v.vendor_id === vendor.vendor_id ? vendor : v,
-      );
-      sync("finops_vendors", updated);
-      return updated;
-    });
-    addAuditLog(
-      "VENDOR UPDATED",
-      vendor.vendor_id,
-      `Updated vendor master configurations for ${vendor.name}`,
-    );
-  };
+      const id = `AUD-${Math.floor(100000 + Math.random() * 900000)}`;
+      const newLog: AuditLog = {
+        id,
+        timestamp: formattedTime,
+        user: currentUser,
+        action,
+        document_ref: docRef,
+        details,
+        amount,
+      };
 
-  const addInvoice = (invoice: Invoice) => {
-    setInvoices((prev) => {
-      const updated = [invoice, ...prev];
-      sync("finops_invoices", updated);
-      return updated;
-    });
-    addAuditLog(
-      "INVOICE UPLOADED",
-      invoice.id,
-      `Uploaded invoice ${invoice.invoice_number} for vendor ${invoice.vendor_name}`,
-      invoice.total,
-    );
-  };
+      setAuditTrail((prev) => [newLog, ...prev]);
 
-  const updateInvoice = (invoice: Invoice) => {
-    setInvoices((prev) => {
-      const updated = prev.map((i) => (i.id === invoice.id ? invoice : i));
-      sync("finops_invoices", updated);
-      return updated;
-    });
-    addAuditLog(
-      "INVOICE PROCESSED",
-      invoice.id,
-      `Status updated to ${invoice.status} for ${invoice.invoice_number}`,
-      invoice.total,
-    );
-  };
+      const supabase = createSupabaseBrowserClient();
+      if (supabase) {
+        supabase
+          .from("audit_logs")
+          .insert({
+            id,
+            timestamp: formattedTime,
+            operator_user: currentUser,
+            action,
+            document_ref: docRef,
+            details,
+            amount,
+          })
+          .then(({ error }) => {
+            if (error) console.error("Failed to persist audit log:", error.message);
+          });
+      }
+    },
+    [currentUser],
+  );
 
-  const deleteInvoice = (id: string, reason: string) => {
+  const addVendor = useCallback((vendor: Vendor) => {
+    setVendors((prev) => [...prev, vendor].sort((a, b) => a.name.localeCompare(b.name)));
+
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) return;
+    supabase
+      .from("vendors")
+      .insert(vendor)
+      .then(({ error }) => {
+        if (error) {
+          alert(`Failed to save vendor: ${error.message}`);
+          setVendors((prev) => prev.filter((v) => v.vendor_id !== vendor.vendor_id));
+          return;
+        }
+        addAuditLog("VENDOR ADDED", vendor.vendor_id, `Created new vendor ${vendor.name} (${vendor.tax_id_pin})`);
+      });
+  }, [addAuditLog]);
+
+  const updateVendor = useCallback((vendor: Vendor) => {
+    setVendors((prev) => prev.map((v) => (v.vendor_id === vendor.vendor_id ? vendor : v)));
+
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) return;
+    supabase
+      .from("vendors")
+      .update(vendor)
+      .eq("vendor_id", vendor.vendor_id)
+      .then(({ error }) => {
+        if (error) {
+          alert(`Failed to update vendor: ${error.message}`);
+          return;
+        }
+        addAuditLog("VENDOR UPDATED", vendor.vendor_id, `Updated vendor master configurations for ${vendor.name}`);
+      });
+  }, [addAuditLog]);
+
+  const addInvoice = useCallback((invoice: Invoice) => {
+    const { id: _tempId, ...invoiceWithoutId } = invoice;
+    setInvoices((prev) => [invoice, ...prev]);
+
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) return;
+    supabase
+      .from("invoices")
+      .insert(invoiceWithoutId)
+      .select()
+      .single()
+      .then(({ data, error }) => {
+        if (error || !data) {
+          alert(`Failed to save invoice: ${error?.message ?? "unknown error"}`);
+          setInvoices((prev) => prev.filter((i) => i.id !== invoice.id));
+          return;
+        }
+        setInvoices((prev) => prev.map((i) => (i.id === invoice.id ? (data as Invoice) : i)));
+        addAuditLog(
+          "INVOICE UPLOADED",
+          data.id,
+          `Uploaded invoice ${invoice.invoice_number} for vendor ${invoice.vendor_name}`,
+          invoice.total,
+        );
+      });
+  }, [addAuditLog]);
+
+  const updateInvoice = useCallback((invoice: Invoice) => {
+    setInvoices((prev) => prev.map((i) => (i.id === invoice.id ? invoice : i)));
+
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) return;
+    const { id, ...rest } = invoice;
+    supabase
+      .from("invoices")
+      .update(rest)
+      .eq("id", id)
+      .then(({ error }) => {
+        if (error) {
+          alert(`Failed to update invoice: ${error.message}`);
+          return;
+        }
+        addAuditLog(
+          "INVOICE PROCESSED",
+          invoice.id,
+          `Status updated to ${invoice.status} for ${invoice.invoice_number}`,
+          invoice.total,
+        );
+      });
+  }, [addAuditLog]);
+
+  const deleteInvoice = useCallback((id: string, reason: string) => {
     const target = invoices.find((i) => i.id === id);
-    setInvoices((prev) => {
-      const updated = prev.filter((i) => i.id !== id);
-      sync("finops_invoices", updated);
-      return updated;
-    });
-    addAuditLog(
-      "DOCUMENT DELETED",
-      id,
-      `Deleted Invoice Ref: ${target?.invoice_number || id}. Reason: ${reason}`,
-      target?.total,
-    );
-  };
+    setInvoices((prev) => prev.filter((i) => i.id !== id));
 
-  const addWhtPayment = (payment: WhtPayment) => {
-    setWhtPayments((prev) => {
-      const updated = [payment, ...prev];
-      sync("finops_wht", updated);
-      return updated;
-    });
-    addAuditLog(
-      "WHT CALCULATED",
-      payment.id,
-      `Calculated ${payment.wht_rate * 100}% withholding for invoice ${payment.cu_invoice_number}`,
-      payment.wht_amount,
-    );
-  };
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) return;
+    supabase
+      .from("invoices")
+      .delete()
+      .eq("id", id)
+      .then(({ error }) => {
+        if (error) {
+          alert(`Failed to delete invoice: ${error.message}`);
+          if (target) setInvoices((prev) => [target, ...prev]);
+          return;
+        }
+        addAuditLog(
+          "DOCUMENT DELETED",
+          id,
+          `Deleted Invoice Ref: ${target?.invoice_number || id}. Reason: ${reason}`,
+          target?.total,
+        );
+      });
+  }, [invoices, addAuditLog]);
 
-  const fileWhtPayments = (ids: string[], kraReference: string) => {
-    setWhtPayments((prev) => {
-      const updated = prev.map((p) =>
-        ids.includes(p.id)
-          ? { ...p, status: "Filed" as const, kra_reference: kraReference }
-          : p,
-      );
-      sync("finops_wht", updated);
-      return updated;
-    });
-    addAuditLog(
-      "WHT FILED",
-      kraReference,
-      `Filed bulk WHT remittance of ${ids.length} entries to iTax. Reference: ${kraReference}`,
+  const addWhtPayment = useCallback((payment: WhtPayment) => {
+    const { id: _tempId, ...paymentWithoutId } = payment;
+    setWhtPayments((prev) => [payment, ...prev]);
+
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) return;
+    supabase
+      .from("wht_payments")
+      .insert(paymentWithoutId)
+      .select()
+      .single()
+      .then(({ data, error }) => {
+        if (error || !data) {
+          alert(`Failed to save WHT payment: ${error?.message ?? "unknown error"}`);
+          setWhtPayments((prev) => prev.filter((p) => p.id !== payment.id));
+          return;
+        }
+        setWhtPayments((prev) => prev.map((p) => (p.id === payment.id ? (data as WhtPayment) : p)));
+        addAuditLog(
+          "WHT CALCULATED",
+          data.id,
+          `Calculated ${payment.wht_rate * 100}% withholding for invoice ${payment.cu_invoice_number}`,
+          payment.wht_amount,
+        );
+      });
+  }, [addAuditLog]);
+
+  const fileWhtPayments = useCallback((ids: string[], kraReference: string) => {
+    const realIds = ids.filter((id) => !id.startsWith("WHT-COMP-"));
+    setWhtPayments((prev) =>
+      prev.map((p) => (ids.includes(p.id) ? { ...p, status: "Filed" as const, kra_reference: kraReference } : p)),
     );
-  };
+
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase || realIds.length === 0) return;
+    supabase
+      .from("wht_payments")
+      .update({ status: "Filed", kra_reference: kraReference })
+      .in("id", realIds)
+      .then(({ error }) => {
+        if (error) {
+          alert(`Failed to file WHT payments: ${error.message}`);
+          return;
+        }
+        addAuditLog(
+          "WHT FILED",
+          kraReference,
+          `Filed bulk WHT remittance of ${ids.length} entries to iTax. Reference: ${kraReference}`,
+        );
+      });
+  }, [addAuditLog]);
 
   const addGLAccount = (account: GLAccount) => {
     setGlAccounts((prev) => {
@@ -385,67 +480,118 @@ export function FinOpsProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  const updateChecklistItem = (
+  const updateChecklistItem = useCallback((
     id: string,
     status: ChecklistItem["status"],
     approver?: string | null,
   ) => {
-    setChecklist((prev) => {
-      const updated = prev.map((c) =>
-        c.id === id
-          ? {
-              ...c,
-              status,
-              completed_date:
-                status === "Complete"
-                  ? new Date().toISOString().substring(0, 10)
-                  : null,
-              approver: status === "Complete" ? approver || currentUser : null,
-            }
-          : c,
-      );
-      sync("finops_checklist", updated);
-      return updated;
-    });
-    addAuditLog("MONTH_END TASK", id, `Marked close task ${id} as ${status}`);
-  };
+    const completed_date = status === "Complete" ? new Date().toISOString().substring(0, 10) : null;
+    const finalApprover = status === "Complete" ? approver || currentUser : null;
+
+    setChecklist((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, status, completed_date, approver: finalApprover } : c)),
+    );
+
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) return;
+    supabase
+      .from("checklist_items")
+      .update({ status, completed_date, approver: finalApprover })
+      .eq("id", id)
+      .then(({ error }) => {
+        if (error) {
+          alert(`Failed to update checklist item: ${error.message}`);
+          return;
+        }
+        addAuditLog("MONTH_END TASK", id, `Marked close task ${id} as ${status}`);
+      });
+  }, [currentUser, addAuditLog]);
 
   const updateBudgetActual = (id: string, actual: number) => {
     setBudgets((prev) => {
-      const updated = prev.map((b) =>
-        b.id === id ? { ...b, actual_amount: actual } : b,
-      );
+      const updated = prev.map((b) => (b.id === id ? { ...b, actual_amount: actual } : b));
       sync("finops_budgets", updated);
       return updated;
     });
   };
 
-  const uploadDocument = (doc: Document) => {
-    setDocuments((prev) => {
-      const updated = [doc, ...prev];
-      sync("finops_docs", updated);
-      return updated;
-    });
-    addAuditLog(
-      "DOCUMENT STORED",
-      doc.id,
-      `Uploaded file "${doc.name}" tagged as ${doc.tag}`,
-    );
-  };
+  const uploadDocument = useCallback(async (file: File, tag: Document["tag"], displayName?: string) => {
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) {
+      alert("Backend is not configured — cannot upload documents.");
+      return;
+    }
 
-  const deleteDocument = (id: string, reason: string) => {
+    const name = displayName?.trim() || file.name;
+    const storagePath = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("finops-documents")
+      .upload(storagePath, file);
+
+    if (uploadError) {
+      alert(`Failed to upload file: ${uploadError.message}`);
+      return;
+    }
+
+    const { data, error: insertError } = await supabase
+      .from("documents")
+      .insert({
+        name,
+        tag,
+        storage_path: storagePath,
+        size: file.size,
+        uploaded_by: currentUser,
+        is_deleted: false,
+      })
+      .select()
+      .single();
+
+    if (insertError || !data) {
+      alert(`Failed to index document: ${insertError?.message ?? "unknown error"}`);
+      await supabase.storage.from("finops-documents").remove([storagePath]);
+      return;
+    }
+
+    setDocuments((prev) => [
+      {
+        id: data.id,
+        name: data.name,
+        tag: data.tag,
+        uploaded_by: data.uploaded_by,
+        uploaded_at: data.uploaded_at,
+        size: formatBytes(data.size),
+        storage_path: data.storage_path,
+      },
+      ...prev,
+    ]);
+
+    addAuditLog("DOCUMENT STORED", data.id, `Uploaded file "${name}" tagged as ${tag}`);
+  }, [currentUser, addAuditLog]);
+
+  const deleteDocument = useCallback((id: string, reason: string) => {
     const doc = documents.find((d) => d.id === id);
-    setDocuments((prev) => {
-      const updated = prev.filter((d) => d.id !== id);
-      sync("finops_docs", updated);
-      return updated;
-    });
-    addAuditLog(
-      "DOCUMENT DELETED",
-      id,
-      `Removed file "${doc?.name || id}" from Document Store. Reason: ${reason}`,
-    );
-  };
+    setDocuments((prev) => prev.filter((d) => d.id !== id));
+
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) return;
+    supabase
+      .from("documents")
+      .update({ is_deleted: true, deletion_reason: reason })
+      .eq("id", id)
+      .then(({ error }) => {
+        if (error) {
+          alert(`Failed to delete document: ${error.message}`);
+          if (doc) setDocuments((prev) => [doc, ...prev]);
+          return;
+        }
+        addAuditLog(
+          "DOCUMENT DELETED",
+          id,
+          `Removed file "${doc?.name || id}" from Document Store. Reason: ${reason}`,
+        );
+      });
+  }, [documents, addAuditLog]);
 
   const clearSession = () => {
     if (typeof window !== "undefined") {

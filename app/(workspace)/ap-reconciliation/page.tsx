@@ -4,11 +4,13 @@ import React, { useState, useMemo } from "react"
 import { useFinOps } from "@/components/finops-provider"
 import { useTheme } from "@/components/theme-provider"
 import { runAPReconciliation } from "@/lib/api-logic"
+import { createSupabaseBrowserClient } from "@/lib/supabase"
 import { Scale, CheckCircle2, AlertCircle, FileSpreadsheet, Send, ShieldAlert, ArrowRight } from "lucide-react"
 
 export default function APReconciliationPage() {
-  const { invoices, addAuditLog } = useFinOps()
+  const { invoices, addAuditLog, currentUser } = useFinOps()
   const { cardRadius, buttonRadius, accentBg, accentText, accentBadge } = useTheme()
+  const [approving, setApproving] = useState(false)
 
   // Mock list of vendor payments issued this month
   const [payments, setPayments] = useState([
@@ -29,8 +31,40 @@ export default function APReconciliationPage() {
 
   const [activeReconIdx, setActiveReconIdx] = useState<number | null>(null)
 
-  const approveReconciliation = () => {
-    addAuditLog("RECON APPROVED", "AP Statement Reconcile", `Tony approved the AP ledger matching run of ${payments.length} bank payments.`)
+  const approveReconciliation = async () => {
+    const supabase = createSupabaseBrowserClient()
+    if (!supabase) {
+      alert("Backend is not configured — cannot save reconciliation.")
+      return
+    }
+
+    setApproving(true)
+
+    const rows = reconReport.flatMap((recon) => {
+      const base = {
+        payment_ref: recon.reference,
+        vendor_name: recon.vendorName,
+        payment_amount_kes: recon.paymentAmountKES,
+        payment_date: recon.paymentDate,
+        match_status: recon.status,
+        confidence: recon.confidence,
+        approved_by: currentUser,
+      }
+      if (recon.matchedInvoiceIds.length === 0) {
+        return [{ ...base, invoice_id: null as string | null }]
+      }
+      return recon.matchedInvoiceIds.map((invoiceId) => ({ ...base, invoice_id: invoiceId as string | null }))
+    })
+
+    const { error } = await supabase.from("reconciliation_ledger").insert(rows)
+    setApproving(false)
+
+    if (error) {
+      alert(`Failed to save reconciliation: ${error.message}`)
+      return
+    }
+
+    addAuditLog("RECON APPROVED", "AP Statement Reconcile", `${currentUser} approved the AP ledger matching run of ${payments.length} bank payments.`)
     alert("AP reconciliation approved & logged in audit history successfully!")
   }
 
@@ -44,10 +78,11 @@ export default function APReconciliationPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={approveReconciliation}
-            className={`px-3 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 ${accentBg} ${buttonRadius}`}
+            disabled={approving}
+            className={`px-3 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 disabled:opacity-50 ${accentBg} ${buttonRadius}`}
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
-            <span>Approve Recon Run</span>
+            <span>{approving ? "Saving…" : "Approve Recon Run"}</span>
           </button>
         </div>
       </div>

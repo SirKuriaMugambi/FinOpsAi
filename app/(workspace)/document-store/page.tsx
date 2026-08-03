@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { useFinOps } from "@/components/finops-provider";
 import { useTheme } from "@/components/theme-provider";
 import { Document } from "@/lib/seeds";
+import { createSupabaseBrowserClient } from "@/lib/supabase";
 import {
   FolderArchive,
   Search,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 
 export default function DocumentStorePage() {
-  const { documents, uploadDocument, deleteDocument, currentUser } =
+  const { documents, uploadDocument, deleteDocument } =
     useFinOps();
   const { cardRadius, buttonRadius, accentBg, accentText, accentBadge } =
     useTheme();
@@ -26,10 +27,11 @@ export default function DocumentStorePage() {
   const [deleteReason, setDeleteReason] = useState("");
   const [activeDeleteId, setActiveDeleteId] = useState<string | null>(null);
 
-  const [newFile, setNewFile] = useState({
-    name: "",
-    tag: "invoice" as Document["tag"],
-  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [tag, setTag] = useState<Document["tag"]>("invoice");
+  const [uploading, setUploading] = useState(false);
 
   const filteredDocs = useMemo(() => {
     return documents.filter((doc) => {
@@ -41,28 +43,35 @@ export default function DocumentStorePage() {
     });
   }, [documents, searchQuery, tagFilter]);
 
-  const handleUpload = (e: React.FormEvent) => {
+  const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFile.name) return;
+    if (!selectedFile) return;
 
-    const id = `DOC0${documents.length + 1}`;
-    const fullDoc: Document = {
-      id,
-      name:
-        newFile.name.endsWith(".pdf") || newFile.name.endsWith(".xlsx")
-          ? newFile.name
-          : `${newFile.name}.pdf`,
-      tag: newFile.tag,
-      uploaded_by: currentUser,
-      uploaded_at: new Date().toISOString().substring(0, 16).replace("T", " "),
-      size: "650 KB",
-    };
+    setUploading(true);
+    await uploadDocument(selectedFile, tag, displayName || undefined);
+    setUploading(false);
 
-    uploadDocument(fullDoc);
-    setNewFile({ name: "", tag: "invoice" });
-    alert(
-      `Document "${fullDoc.name}" uploaded and indexed under the folder archive catalog!`,
-    );
+    setSelectedFile(null);
+    setDisplayName("");
+    setTag("invoice");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleView = async (doc: Document) => {
+    if (!doc.storage_path) {
+      alert("No stored file path for this document.");
+      return;
+    }
+    const supabase = createSupabaseBrowserClient();
+    if (!supabase) return;
+    const { data, error } = await supabase.storage
+      .from("finops-documents")
+      .createSignedUrl(doc.storage_path, 60);
+    if (error || !data) {
+      alert(`Failed to open file: ${error?.message ?? "unknown error"}`);
+      return;
+    }
+    window.open(data.signedUrl, "_blank");
   };
 
   const handleDeleteTrigger = (id: string) => {
@@ -183,17 +192,13 @@ export default function DocumentStorePage() {
                 ) : (
                   <div className="pt-2 flex justify-end gap-1 border-t border-zinc-100 dark:border-zinc-900/60">
                     <button
-                      onClick={() => alert(`Reviewing file: ${doc.name}`)}
+                      onClick={() => handleView(doc)}
                       className={`p-1 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 ${buttonRadius}`}
                     >
                       <Eye className="h-3.5 w-3.5 text-zinc-400" />
                     </button>
                     <button
-                      onClick={() =>
-                        alert(
-                          `Initiating secure local download for ${doc.name}...`,
-                        )
-                      }
+                      onClick={() => handleView(doc)}
                       className={`p-1 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 ${buttonRadius}`}
                     >
                       <Download className="h-3.5 w-3.5 text-zinc-400" />
@@ -224,17 +229,27 @@ export default function DocumentStorePage() {
             <div className="space-y-3">
               <div className="space-y-1">
                 <label className="text-[10px] font-mono text-zinc-400 uppercase block">
-                  Document Display Name
+                  Select File
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+                  className={`w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2.5 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-zinc-400 ${buttonRadius}`}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-zinc-400 uppercase block">
+                  Document Display Name (optional)
                 </label>
                 <input
                   type="text"
-                  value={newFile.name}
-                  onChange={(e) =>
-                    setNewFile((prev) => ({ ...prev, name: e.target.value }))
-                  }
-                  placeholder="e.g. June_VAT_Filing_KRA_ TIMS"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder={selectedFile?.name || "e.g. June_VAT_Filing_KRA_TIMS.pdf"}
                   className={`w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-400 ${buttonRadius}`}
-                  required
                 />
               </div>
 
@@ -243,13 +258,8 @@ export default function DocumentStorePage() {
                   File Category Tag
                 </label>
                 <select
-                  value={newFile.tag}
-                  onChange={(e) =>
-                    setNewFile((prev) => ({
-                      ...prev,
-                      tag: e.target.value as Document["tag"],
-                    }))
-                  }
+                  value={tag}
+                  onChange={(e) => setTag(e.target.value as Document["tag"])}
                   className={`w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-400 ${buttonRadius}`}
                 >
                   <option value="invoice">Invoice PDF</option>
@@ -266,10 +276,11 @@ export default function DocumentStorePage() {
               <div className="pt-2">
                 <button
                   type="submit"
-                  className={`w-full py-2 font-mono text-[10px] uppercase font-bold tracking-wider text-center flex items-center justify-center gap-1.5 ${accentBg} ${buttonRadius}`}
+                  disabled={!selectedFile || uploading}
+                  className={`w-full py-2 font-mono text-[10px] uppercase font-bold tracking-wider text-center flex items-center justify-center gap-1.5 disabled:opacity-50 ${accentBg} ${buttonRadius}`}
                 >
                   <UploadCloud className="h-4 w-4" />
-                  <span>Secure Index File</span>
+                  <span>{uploading ? "Uploading…" : "Secure Index File"}</span>
                 </button>
               </div>
             </div>

@@ -1,0 +1,426 @@
+"use client"
+
+import React, { useEffect, useMemo, useState } from "react"
+import { useFinOps } from "@/components/finops-provider"
+import { useTheme } from "@/components/theme-provider"
+import { IdCard, Plus, X, Pencil, Trash2, ShieldAlert } from "lucide-react"
+import type { Employee } from "@/lib/seeds"
+
+const NUMERIC_FIELDS = [
+  "base_salary", "bonus_commission", "fringe_benefit", "transport_allowance",
+  "arrears", "ot_other", "voluntary_pension", "advances", "helb",
+  "company_loan", "bank_loan", "sacco", "personal_relief_override",
+]
+
+function fmt(n: number | undefined) {
+  return (n ?? 0).toLocaleString("en-KE", { maximumFractionDigits: 0 })
+}
+
+interface FieldProps {
+  label: string
+  name: string
+  type?: string
+  disabled?: boolean
+  value: string | number | null | undefined
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+}
+
+function Field({ label, name, type = "text", disabled, value, onChange }: FieldProps) {
+  return (
+    <div className="space-y-0.5">
+      <label className="text-[9px] font-mono uppercase text-zinc-400">{label}</label>
+      <input
+        name={name} type={type}
+        disabled={disabled}
+        value={value ?? ""}
+        onChange={onChange}
+        className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 rounded disabled:opacity-50"
+      />
+    </div>
+  )
+}
+
+interface EmployeeFormProps {
+  initial?: Employee
+  onSave: (emp: Partial<Employee>) => Promise<void>
+  onCancel: () => void
+  cardRadius: string
+  buttonRadius: string
+  accentBg: string
+}
+
+function EmployeeForm({ initial, onSave, onCancel, cardRadius, buttonRadius, accentBg }: EmployeeFormProps) {
+  const blank: Partial<Employee> = {
+    id: "", name: "", national_id: "", kra_pin: "", sha_pin: "",
+    grade: "Staff", cost_centre: "511", department: "Production",
+    bank_name: "", bank_account_number: "",
+    base_salary: 0, bonus_commission: 0, fringe_benefit: 0, transport_allowance: 0,
+    arrears: 0, ot_other: 0, voluntary_pension: 0,
+    advances: 0, helb: 0, company_loan: 0, bank_loan: 0, sacco: 0,
+    personal_relief_override: null, exclude_nssf_from_paye_bands: false,
+  }
+  const [form, setForm] = useState<Partial<Employee>>(initial ?? blank)
+  const [saving, setSaving] = useState(false)
+
+  function handle(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value, type } = e.target
+    if (type === "checkbox") {
+      const checked = (e.target as HTMLInputElement).checked
+      setForm((f) => ({ ...f, [name]: checked }))
+      return
+    }
+    setForm((f) => ({ ...f, [name]: NUMERIC_FIELDS.includes(name) ? (value === "" ? null : parseFloat(value) || 0) : value }))
+  }
+
+  async function save() {
+    setSaving(true)
+    try {
+      await onSave(form)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function fieldValue(n: string): string | number | null {
+    return (form as Record<string, unknown>)[n] as string | number | null
+  }
+
+  return (
+    <div className={`p-5 border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 space-y-4 ${cardRadius}`}>
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-mono uppercase tracking-wider font-bold">
+          {initial ? `Edit Employee — ${initial.id}` : "Add Employee"}
+        </h3>
+        <button onClick={onCancel} className="text-zinc-400 hover:text-zinc-600"><X className="h-4 w-4" /></button>
+      </div>
+
+      <p className="text-[9px] font-mono uppercase text-zinc-400">Identity</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Staff No (ID)" name="id" value={fieldValue("id")} onChange={handle} disabled={initial !== undefined} />
+        <Field label="Name" name="name" value={fieldValue("name")} onChange={handle} />
+        <Field label="National ID" name="national_id" value={fieldValue("national_id")} onChange={handle} />
+        <Field label="KRA PIN" name="kra_pin" value={fieldValue("kra_pin")} onChange={handle} />
+        <Field label="SHA/NHIF PIN" name="sha_pin" value={fieldValue("sha_pin")} onChange={handle} />
+        <Field label="Grade" name="grade" value={fieldValue("grade")} onChange={handle} />
+        <div className="space-y-0.5">
+          <label className="text-[9px] font-mono uppercase text-zinc-400">Cost Centre</label>
+          <select name="cost_centre" value={form.cost_centre ?? "511"} onChange={handle}
+            className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] font-mono focus:outline-none rounded">
+            <option value="121">121 — Finance</option>
+            <option value="204">204 — Technical (TC)</option>
+            <option value="205">205 — General Manager</option>
+            <option value="206">206 — Technical Assistants</option>
+            <option value="511">511 — Production</option>
+            <option value="512">512 — Production-OH</option>
+          </select>
+        </div>
+        <div className="space-y-0.5">
+          <label className="text-[9px] font-mono uppercase text-zinc-400">Department</label>
+          <select name="department" value={form.department ?? "Production"} onChange={handle}
+            className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] font-mono focus:outline-none rounded">
+            <option>Finance</option>
+            <option>Technical</option>
+            <option>General Manager</option>
+            <option>Production</option>
+            <option>Production-OH</option>
+          </select>
+        </div>
+      </div>
+
+      <p className="text-[9px] font-mono uppercase text-zinc-400 pt-1 border-t dark:border-zinc-800">Bank Details</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Bank Name" name="bank_name" value={fieldValue("bank_name")} onChange={handle} />
+        <Field label="Bank Account Number" name="bank_account_number" value={fieldValue("bank_account_number")} onChange={handle} />
+      </div>
+
+      <p className="text-[9px] font-mono uppercase text-zinc-400 pt-1 border-t dark:border-zinc-800">Earnings</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Basic Salary" name="base_salary" type="number" value={fieldValue("base_salary")} onChange={handle} />
+        <Field label="Bonus / Commission" name="bonus_commission" type="number" value={fieldValue("bonus_commission")} onChange={handle} />
+        <Field label="Fringe Benefit (FBT)" name="fringe_benefit" type="number" value={fieldValue("fringe_benefit")} onChange={handle} />
+        <Field label="Transport Allowance" name="transport_allowance" type="number" value={fieldValue("transport_allowance")} onChange={handle} />
+        <Field label="Arrears" name="arrears" type="number" value={fieldValue("arrears")} onChange={handle} />
+        <Field label="OT / Other" name="ot_other" type="number" value={fieldValue("ot_other")} onChange={handle} />
+      </div>
+
+      <p className="text-[9px] font-mono uppercase text-zinc-400 pt-1 border-t dark:border-zinc-800">Deductions (Post-Tax)</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Voluntary Pension" name="voluntary_pension" type="number" value={fieldValue("voluntary_pension")} onChange={handle} />
+        <Field label="Advances" name="advances" type="number" value={fieldValue("advances")} onChange={handle} />
+        <Field label="HELB" name="helb" type="number" value={fieldValue("helb")} onChange={handle} />
+        <Field label="Company Loan" name="company_loan" type="number" value={fieldValue("company_loan")} onChange={handle} />
+        <Field label="Bank Loan" name="bank_loan" type="number" value={fieldValue("bank_loan")} onChange={handle} />
+        <Field label="SACCO" name="sacco" type="number" value={fieldValue("sacco")} onChange={handle} />
+      </div>
+
+      <p className="text-[9px] font-mono uppercase text-zinc-400 pt-1 border-t dark:border-zinc-800 flex items-center gap-1">
+        <ShieldAlert className="h-3 w-3" /> Statutory Exceptions
+      </p>
+      <div className="grid grid-cols-2 gap-3 items-end">
+        <Field label="Personal Relief Override (blank = standard 2,400)" name="personal_relief_override" type="number" value={fieldValue("personal_relief_override")} onChange={handle} />
+        <label className="flex items-center gap-2 text-[10px] font-mono text-zinc-500 pb-1.5">
+          <input
+            type="checkbox" name="exclude_nssf_from_paye_bands"
+            checked={Boolean(form.exclude_nssf_from_paye_bands)}
+            onChange={handle}
+            className="h-3.5 w-3.5"
+          />
+          Exclude NSSF from PAYE bands (confirmed exceptions only)
+        </label>
+      </div>
+      <p className="text-[9px] text-zinc-400 font-mono">
+        Statutory items (NSSF, SHIF, AHL, PAYE) are computed automatically from earnings — see Payroll &amp; PAYE.
+      </p>
+
+      <div className="flex gap-2 pt-2">
+        <button onClick={save} disabled={saving} className={`flex-1 py-2 font-mono text-[10px] uppercase tracking-wider font-bold disabled:opacity-50 ${accentBg} ${buttonRadius}`}>
+          {saving ? "Saving…" : initial ? "Update Employee" : "Add Employee"}
+        </button>
+        <button onClick={onCancel} className="px-4 py-2 border border-zinc-200 dark:border-zinc-800 font-mono text-[10px] uppercase rounded">
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default function EmployeesPage() {
+  const { addAuditLog } = useFinOps()
+  const { cardRadius, buttonRadius, accentBg, accentBadge } = useTheme()
+
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // Reload after a CRUD mutation (create/update/delete) — kept out of the
+  // initial-mount effect below since it's called from multiple places.
+  async function refreshEmployees() {
+    try {
+      const response = await fetch("/api/employees")
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? "Failed to load employees")
+      setEmployees(payload.employees ?? [])
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load employees")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    let ignore = false
+
+    async function loadInitialEmployees() {
+      try {
+        const response = await fetch("/api/employees")
+        const payload = await response.json()
+        if (ignore) return
+        if (!response.ok) throw new Error(payload.error ?? "Failed to load employees")
+        setEmployees(payload.employees ?? [])
+      } catch (err) {
+        if (!ignore) setError(err instanceof Error ? err.message : "Failed to load employees")
+      } finally {
+        if (!ignore) setLoading(false)
+      }
+    }
+
+    loadInitialEmployees()
+    return () => { ignore = true }
+  }, [])
+
+  const editing = useMemo(() => employees.find((e) => e.id === editId), [employees, editId])
+
+  async function handleCreate(form: Partial<Employee>) {
+    const response = await fetch("/api/employees", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    })
+    const payload = await response.json()
+    if (!response.ok) {
+      addAuditLog("EMPLOYEE CREATE FAILED", form.id ?? "unknown", payload.error ?? "Unknown error")
+      setError(payload.error ?? "Failed to create employee")
+      return
+    }
+    addAuditLog("EMPLOYEE CREATED", form.id ?? "", `Added ${form.name} (${form.id}) to the employee master.`)
+    setShowAddForm(false)
+    await refreshEmployees()
+  }
+
+  async function handleUpdate(form: Partial<Employee>) {
+    if (!editId) return
+    const response = await fetch(`/api/employees/${editId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    })
+    const payload = await response.json()
+    if (!response.ok) {
+      addAuditLog("EMPLOYEE UPDATE FAILED", editId, payload.error ?? "Unknown error")
+      setError(payload.error ?? "Failed to update employee")
+      return
+    }
+    addAuditLog("EMPLOYEE UPDATED", editId, `Updated master data for ${form.name ?? editId}.`)
+    setEditId(null)
+    await refreshEmployees()
+  }
+
+  async function handleDelete(emp: Employee) {
+    if (!window.confirm(`Remove ${emp.name} (${emp.id}) from the employee master? This cannot be undone here.`)) {
+      return
+    }
+    const response = await fetch(`/api/employees/${emp.id}`, { method: "DELETE" })
+    const payload = await response.json()
+    if (!response.ok) {
+      addAuditLog("EMPLOYEE DELETE FAILED", emp.id, payload.error ?? "Unknown error")
+      setError(payload.error ?? "Failed to delete employee")
+      return
+    }
+    addAuditLog("EMPLOYEE DELETED", emp.id, `Removed ${emp.name} (${emp.id}) from the employee master.`)
+    await refreshEmployees()
+  }
+
+  const exceptionCount = employees.filter((e) => e.exclude_nssf_from_paye_bands || e.personal_relief_override).length
+
+  return (
+    <div className="space-y-6">
+      <div className="pb-3 border-b border-zinc-200 dark:border-zinc-900 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="space-y-0.5">
+          <h1 className="text-base font-bold font-mono uppercase tracking-wider">Employee Master Data</h1>
+          <p className="text-zinc-500 dark:text-zinc-400 text-xs max-w-2xl">
+            Single source of truth for employee identity, bank details, salary structure, and statutory
+            exceptions. Payroll runs read from this data — never re-typed.
+          </p>
+        </div>
+        <button
+          onClick={() => { setShowAddForm(true); setEditId(null) }}
+          className={`px-3 py-1.5 font-mono text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 shrink-0 ${accentBg} ${buttonRadius}`}
+        >
+          <Plus className="h-3.5 w-3.5" /><span>Add Employee</span>
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {[
+          { label: "Headcount", value: employees.length.toString() },
+          { label: "Statutory Exceptions", value: exceptionCount.toString() },
+          { label: "Placeholder Cost Centres", value: employees.filter((e) => e.cost_centre === "511").length.toString() },
+        ].map((card) => (
+          <div key={card.label} className={`p-4 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 flex flex-col justify-between h-16 ${cardRadius}`}>
+            <span className="text-[9px] font-mono uppercase text-zinc-400">{card.label}</span>
+            <span className="text-sm font-bold font-mono text-zinc-800 dark:text-zinc-100">{card.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {error && (
+        <div className="p-3 border border-rose-200 bg-rose-50/40 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900 text-[11px]">
+          {error}
+        </div>
+      )}
+
+      {showAddForm && (
+        <EmployeeForm
+          onSave={handleCreate}
+          onCancel={() => setShowAddForm(false)}
+          cardRadius={cardRadius}
+          buttonRadius={buttonRadius}
+          accentBg={accentBg}
+        />
+      )}
+
+      {editing && (
+        <EmployeeForm
+          initial={editing}
+          onSave={handleUpdate}
+          onCancel={() => setEditId(null)}
+          cardRadius={cardRadius}
+          buttonRadius={buttonRadius}
+          accentBg={accentBg}
+        />
+      )}
+
+      <div className={`border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 overflow-hidden ${cardRadius}`}>
+        <div className="px-5 py-3 border-b dark:border-zinc-900 flex items-center gap-2">
+          <IdCard className="h-4 w-4 text-zinc-400" />
+          <h3 className="text-xs font-mono uppercase tracking-wider font-bold">Employee Master ({employees.length})</h3>
+        </div>
+
+        {loading && (
+          <div className="p-5 text-[10px] font-mono uppercase text-zinc-400">Loading employee master from Supabase…</div>
+        )}
+
+        {!loading && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[900px]">
+              <thead>
+                <tr className="bg-zinc-50 dark:bg-zinc-900/60 border-b border-zinc-200 dark:border-zinc-900 text-zinc-400 font-mono text-[9px] uppercase tracking-wider">
+                  <th className="px-4 py-2.5">Staff</th>
+                  <th className="px-4 py-2.5">KRA PIN</th>
+                  <th className="px-4 py-2.5">Grade</th>
+                  <th className="px-4 py-2.5">Cost Centre</th>
+                  <th className="px-4 py-2.5">Bank</th>
+                  <th className="px-4 py-2.5 text-right">Basic Salary</th>
+                  <th className="px-4 py-2.5 text-center">Exceptions</th>
+                  <th className="px-4 py-2.5 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900 text-[11px]">
+                {employees.map((emp) => (
+                  <tr key={emp.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20">
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-zinc-800 dark:text-zinc-200">{emp.name}</p>
+                      <span className="text-[9px] text-zinc-400 font-mono">{emp.id}</span>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-zinc-500">{emp.kra_pin}</td>
+                    <td className="px-4 py-3 font-mono text-zinc-500">{emp.grade}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-[9px] font-mono px-1.5 py-0.5 ${accentBadge}`}>{emp.cost_centre}</span>
+                      <span className="block text-[9px] text-zinc-400 font-mono mt-0.5">{emp.department}</span>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-zinc-500 text-[10px]">
+                      {emp.bank_name && emp.bank_name !== "N/A" ? `${emp.bank_name} · ${emp.bank_account_number}` : (
+                        <span className="text-amber-500">Not on file</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">{fmt(emp.base_salary)}</td>
+                    <td className="px-4 py-3 text-center">
+                      {(emp.exclude_nssf_from_paye_bands || emp.personal_relief_override) ? (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-mono text-amber-600 dark:text-amber-400">
+                          <ShieldAlert className="h-3 w-3" /> Yes
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-mono text-zinc-300 dark:text-zinc-700">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => { setEditId(emp.id); setShowAddForm(false) }}
+                          className={`p-1 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 ${buttonRadius}`}
+                          title="Edit"
+                        >
+                          <Pencil className="h-3.5 w-3.5 text-zinc-400" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(emp)}
+                          className={`p-1 border border-zinc-200 dark:border-zinc-800 hover:bg-rose-50 dark:hover:bg-rose-950/30 ${buttonRadius}`}
+                          title="Remove"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-rose-400" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

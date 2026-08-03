@@ -129,8 +129,17 @@ async function main() {
   }
 
   const header = rows[headerIndex].map((cell) => String(cell ?? '').trim());
-  const staffIndex = header.findIndex((cell) => cell === 'Staff No');
-  const nameIndex = header.findIndex((cell) => cell === 'Name');
+  // CONFIRMED (cell-by-cell, cross-checked with openpyxl independently of
+  // this SheetJS parse): the header row's "Staff No"/"Name" labels are
+  // shifted one column left of the real data in this specific workbook.
+  // The column literally labeled "Staff No" holds a throwaway sequence
+  // number (1, 2, 3, ...49); the REAL staff number (1000-1049) is one
+  // column over, in the column labeled "Name" — and there is no actual
+  // employee-name column anywhere in this sheet (consistent with the data
+  // being anonymized for this pilot). Swapped explicitly rather than via
+  // header-text lookup, which would silently reproduce the mislabeling.
+  const staffIndex = header.findIndex((cell) => cell === 'Name');
+  const nameIndex = -1; // no real name column exists in this sheet — always placeholder
   const pinIndex = header.findIndex((cell) => cell === 'Pin No');
   const basicIndex = header.findIndex((cell) => cell.includes('Basic'));
   const bonusIndex = header.findIndex((cell) => cell.includes('Bonus/Comm'));
@@ -138,13 +147,61 @@ async function main() {
   const transportIndex = header.findIndex((cell) => cell.includes('Transport/Hse Allowance'));
   const arrearsIndex = header.findIndex((cell) => cell.includes('Arrears'));
   const othersIndex = header.findIndex((cell) => cell.includes('Salary Arrears/OT/Others'));
-  const departmentIndex = header.findIndex((cell) => cell === 'Category');
+  // Column "Category" (AS in the real workbook) holds a genuine per-employee
+  // JOB GRADE (Mgt/Admin/Supervisor/Technical/MO — confirmed by inspecting
+  // real values against real employee rows). It is NOT the same thing as
+  // the department/cost-centre codes (Finance/TC/TA/GM/Production-511/512)
+  // used elsewhere in the app (lib/payroll-engine.ts's CC_NAMES) — those
+  // only appear in a separate, manually-typed summary table at the bottom
+  // of the sheet with NO traceable per-employee mapping anywhere in the
+  // workbook (verified: no column in the employee row range contains those
+  // exact department strings). Cost centre assignment per employee is
+  // therefore NOT available from this source file — every employee below
+  // gets a single placeholder cost_centre/department (ASSUMPTION, see
+  // DEFAULT_COST_CENTRE below) until Tony provides the real per-employee
+  // assignment; this only needs a data edit via the Master Data Hub later,
+  // not a script change.
+  const gradeIndex = header.findIndex((cell) => cell === 'Category');
+
+  // ASSUMPTION: no real per-employee cost-centre exists in the source sheet
+  // (see comment above). Defaulting everyone to Production (511) — the
+  // largest single group per the sheet's own summary table (19 of 46) — is
+  // a placeholder, not a verified fact. Flag for Tony to confirm/correct.
+  const DEFAULT_COST_CENTRE = '511';
+  const DEFAULT_DEPARTMENT = 'Production';
+
+  // Two employees confirmed (via cell-by-cell formula tracing against the
+  // "AI-Automation-workings" sheet) to use Tony's alternate PAYE-band basis
+  // and a non-standard combined personal/life-insurance/education relief —
+  // see lib/payroll-engine.ts's file header. These are the ONLY employees
+  // verified so far; per instruction, more may exist and Tony will confirm
+  // the real list later — this is an editable data table, not hardcoded
+  // logic, so adding/removing entries here never requires a code change
+  // beyond this seed list.
+  const PAYE_EXCEPTIONS = {
+    '1000': { exclude_nssf_from_paye_bands: true, personal_relief_override: 2400 + 1436.54 + 3454.18 },
+    '1001': { exclude_nssf_from_paye_bands: true, personal_relief_override: 2400 + 480 },
+  };
 
   const employeeRows = [];
   const skippedRows = [];
   const usedKraPins = new Set();
 
-  for (let i = headerIndex + 1; i < rows.length; i++) {
+  // Bounded to the confirmed real employee block (49 row slots directly
+  // below the header — verified by direct inspection). The sheet continues
+  // for 183 rows total with unrelated side-tables (leave tracking, OT
+  // calculations, a small unrelated name table) below that; scanning the
+  // whole sheet previously let a few of those rows leak in as phantom
+  // "employees" despite the junk-keyword filters.
+  // +1 for a blank spacer row directly under the header, +49 for the real
+  // employee row slots (verified: the loop's own blank-row skip previously
+  // consumed one of the 49 slots on that spacer row, silently dropping the
+  // last real employee — confirmed by diffing imported staff numbers
+  // against the expected 1000-1049 range).
+  const REAL_EMPLOYEE_ROW_COUNT = 1 + 49;
+  const dataRowLimit = Math.min(rows.length, headerIndex + 1 + REAL_EMPLOYEE_ROW_COUNT);
+
+  for (let i = headerIndex + 1; i < dataRowLimit; i++) {
     const row = rows[i] || [];
     const rawStaffNo = String(row[staffIndex] ?? '').trim();
     const rawName = String(row[nameIndex] ?? '').trim();
@@ -190,8 +247,7 @@ async function main() {
     const looksLikeARealName = rawName && !/^\d+$/.test(rawName);
     const employeeName = looksLikeARealName ? rawName : `Employee ${staffNo || i}`;
 
-    const department = String(row[departmentIndex] ?? '').trim() || 'Production';
-    const grade = department || 'Staff';
+    const grade = String(row[gradeIndex] ?? '').trim() || 'Staff';
     const basicSalary = toCurrencyNumber(row[basicIndex]);
     const bonusCommission = toCurrencyNumber(row[bonusIndex]);
     const fringeBenefit = toCurrencyNumber(row[fringeIndex]);
@@ -209,15 +265,19 @@ async function main() {
     }
     usedKraPins.add(finalKraPin);
 
+    const exception = PAYE_EXCEPTIONS[staffNo] || {};
+
     employeeRows.push({
       id: staffNo || `EMP-${i}`,
       name: employeeName,
       national_id: buildNationalId(staffNo, i),
       kra_pin: finalKraPin,
+      // Not present anywhere in the source workbook — placeholder pending
+      // real HR data from Tony, same as bank_name/bank_account_number below.
       sha_pin: null,
       grade,
-      cost_centre: '511',
-      department,
+      cost_centre: DEFAULT_COST_CENTRE,
+      department: DEFAULT_DEPARTMENT,
       bank_name: 'N/A',
       bank_account_number: 'N/A',
       base_salary: basicSalary,
@@ -232,6 +292,8 @@ async function main() {
       company_loan: 0,
       bank_loan: 0,
       sacco: 0,
+      exclude_nssf_from_paye_bands: exception.exclude_nssf_from_paye_bands ?? false,
+      personal_relief_override: exception.personal_relief_override ?? null,
     });
   }
 
@@ -240,6 +302,14 @@ async function main() {
     inserted: 0,
     failed: [],
     skipped: skippedRows,
+    ASSUMPTIONS_NEEDING_CONFIRMATION: [
+      `cost_centre/department: every employee defaulted to ${DEFAULT_COST_CENTRE}/${DEFAULT_DEPARTMENT} — ` +
+        'no per-employee cost-centre mapping exists anywhere in the source workbook (verified). ' +
+        'Correct via the Master Data Hub once Tony confirms real assignments.',
+      `bank_name/bank_account_number/sha_pin: placeholder ("N/A"/null) for all employees — not present in the source workbook.`,
+      `PAYE exceptions: only staff ${Object.keys(PAYE_EXCEPTIONS).join(', ')} flagged so far (traced from formulas) — ` +
+        'more may exist; Tony to confirm the complete list.',
+    ],
   };
 
   for (const employee of employeeRows) {

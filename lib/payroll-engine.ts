@@ -32,13 +32,37 @@
  * Voluntary pension contributions do NOT reduce taxable pay in the source
  * sheet — verified against an employee who has a voluntary contribution
  * and whose Taxable Pay matches Gross − NSSF − Defined Pension only.
+ *
+ * PAYE band boundaries are computed from (previous ceiling + 1), not from
+ * the previous ceiling itself — e.g. Tony's 25% band is literally
+ * `32,333 − 24,001`, not `32,333 − 24,000`. This is consistent across every
+ * band in the source sheet (confirmed against the flat totals KES 2,400 /
+ * 2,083 / 140,299.80 / 97,499.675 for bands 1–4), so it's replicated exactly
+ * rather than "corrected" to the more conventional boundary — using the
+ * conventional boundary understates PAYE by a few shillings per employee
+ * relative to Tony's numbers.
+ *
+ * Pension contributions above the KES 20,000 statutory cap are NOT dropped:
+ * the excess still leaves the employee's pay, so it's redirected into the
+ * voluntary-pension deduction bucket (verified against an employee whose 5%
+ * contribution exceeds the cap — Tony's sheet folds the excess into the
+ * same cell as the voluntary contribution). It does not reduce taxable pay.
+ *
+ * A small number of employees (e.g. two expatriate/senior roles in the
+ * source sheet) have their PAYE band computed on (Gross − a flat KES 20,000)
+ * instead of the standard (Gross − actual NSSF − capped pension) — NSSF is
+ * not subtracted from their tax-band base at all, while their *reported*
+ * Taxable Pay column still uses the standard formula. Confirmed intentional
+ * (not a copy-paste artifact) — set `excludeNssfFromPayeBands: true` for
+ * those specific employees; do not apply it generally.
+ *
+ * All rates/bands below live in lib/payroll-rules-config.ts — update the
+ * KRA bands, NSSF, SHIF, AHL, pension, or NITA figures there, not here.
  */
 
-// NSSF Tier I/II — kept as the FLAT amounts from Tony's 2024 source sheet,
-// not recalculated against earnings-limit bands, per instruction to stay
-// accurate to the original workbook.
-const NSSF_TIER_1_FLAT = 420
-const NSSF_TIER_2_FLAT = 1740
+import { KENYA_PAYROLL_RULES_2024 } from "@/lib/payroll-rules-config"
+
+const RULES = KENYA_PAYROLL_RULES_2024
 
 export interface PayrollInputs {
   base_salary: number
@@ -58,6 +82,10 @@ export interface PayrollInputs {
   // a different tax/relief arrangement in Tony's sheet). Leave undefined
   // for standard employees.
   personal_relief_override?: number
+  // Set true only for the specific employees confirmed to use Tony's
+  // alternate PAYE-band basis (Gross − flat KES 20,000, NSSF excluded).
+  // See the file header comment. Leave undefined/false for everyone else.
+  excludeNssfFromPayeBands?: boolean
 }
 
 export interface PayrollResult {
@@ -90,38 +118,27 @@ export interface PayrollResult {
 }
 
 // ── PAYE graduated slab calculator ──────────────────────────────────────────
+// Bands are cumulative upper bounds (e.g. 24000, then 32333, then 500000...).
+// Each band's slice is measured from (previous ceiling + 1) — see the file
+// header comment for why this isn't the more conventional previous-ceiling
+// boundary.
 function computeGrossPAYE(taxableMonthlyIncome: number): number {
   if (taxableMonthlyIncome <= 0) return 0
 
   let tax = 0
-  let remaining = taxableMonthlyIncome
+  let previousCeiling = 0
 
-  // Band 1: first 24,000 @ 10%
-  const band1 = Math.min(remaining, 24000)
-  tax += band1 * 0.10
-  remaining -= band1
-  if (remaining <= 0) return tax
+  for (const band of RULES.payeBands) {
+    const bandCeiling = band.upTo ?? Infinity
+    const bandFloor = previousCeiling === 0 ? 0 : previousCeiling + 1
+    const upperForThisBand = Math.min(taxableMonthlyIncome, bandCeiling)
+    const sliceInThisBand = Math.max(upperForThisBand - bandFloor, 0)
 
-  // Band 2: next 8,333 (24,001–32,333) @ 25%
-  const band2 = Math.min(remaining, 8333)
-  tax += band2 * 0.25
-  remaining -= band2
-  if (remaining <= 0) return tax
+    tax += sliceInThisBand * band.rate
+    previousCeiling = bandCeiling
 
-  // Band 3: next 467,667 (32,334–500,000) @ 30%
-  const band3 = Math.min(remaining, 467667)
-  tax += band3 * 0.30
-  remaining -= band3
-  if (remaining <= 0) return tax
-
-  // Band 4: next 300,000 (500,001–800,000) @ 32.5%
-  const band4 = Math.min(remaining, 300000)
-  tax += band4 * 0.325
-  remaining -= band4
-  if (remaining <= 0) return tax
-
-  // Band 5: above 800,000 @ 35%
-  tax += remaining * 0.35
+    if (taxableMonthlyIncome <= bandCeiling) break
+  }
 
   return tax
 }
@@ -132,77 +149,95 @@ export function computePayroll(inputs: PayrollInputs): PayrollResult {
     base_salary, bonus_commission, fringe_benefit, transport_allowance,
     arrears, ot_other, voluntary_pension,
     advances, helb, company_loan, bank_loan, sacco,
-    personal_relief_override,
+    personal_relief_override, excludeNssfFromPayeBands,
   } = inputs
 
   // 1. Gross Salary — sum of all allowances, still on gross (unchanged)
   const gross_salary = base_salary + bonus_commission + fringe_benefit
     + transport_allowance + arrears + ot_other
 
-  // 2. Statutory deductions (pre-tax) — SHIF, AHL and Pension EE are all
-  //    based on BASIC SALARY, not gross. Verified against the source sheet.
+  // All intermediate math below stays at full floating-point precision —
+  // matching how Tony's own workbook computes (Excel never rounds between
+  // formula steps, only in how a cell displays). Rounding to 2dp happens
+  // exactly once, when each field is placed into the returned result — doing
+  // it earlier and feeding the rounded value into the next formula is what
+  // caused cent-level drift from the source sheet during verification.
+
+  // 2. Statutory deductions (pre-tax) — SHIF, AHL and Pension EE/ER are all
+  //    computed against RULES.statutoryBasis ("basic" by default, matching
+  //    Tony's sheet exactly; "gross" is the legally-standard definition,
+  //    available as a one-line config flip once Tony approves the switch).
   //    NSSF stays FLAT per Tony's 2024 sheet, not recalculated per employee.
-  const nssf_t1 = NSSF_TIER_1_FLAT
-  const nssf_t2 = NSSF_TIER_2_FLAT
-  const shif = +(base_salary * 0.0275).toFixed(2)                   // 2.75% SHIF, on BASIC
-  const ahl = +(base_salary * 0.015).toFixed(2)                     // 1.5% Housing Levy, on BASIC
-  const defined_pension_ee = +Math.min(base_salary * 0.05, 20000).toFixed(2) // 5% of BASIC, capped at 20K
-  const defined_pension_er = +(base_salary * 0.10).toFixed(2)       // 10% of BASIC, employer match
-  const total_voluntary = voluntary_pension
+  const statutory_base = RULES.statutoryBasis === "gross" ? gross_salary : base_salary
+  const nssf_t1_raw = RULES.nssfTier1Flat
+  const nssf_t2_raw = RULES.nssfTier2Flat
+  const shif_raw = statutory_base * RULES.shifRate
+  const ahl_raw = statutory_base * RULES.ahlRate
+  const raw_pension_ee = statutory_base * RULES.pensionEmployeeRate
+  const defined_pension_ee_raw = Math.min(raw_pension_ee, RULES.pensionEmployeeCap)
+  const defined_pension_er_raw = statutory_base * RULES.pensionEmployerRate
+  // Contributions above the statutory cap still leave the employee's pay —
+  // they're just not tax-deductible — so the excess is folded into the
+  // voluntary-pension deduction bucket, not dropped. See file header.
+  const pension_excess_over_cap = Math.max(raw_pension_ee - RULES.pensionEmployeeCap, 0)
+  const total_voluntary_raw = voluntary_pension + pension_excess_over_cap
 
   // 3. Taxable pay = Gross − NSSF − Defined Pension EE only.
   //    Voluntary pension does NOT reduce taxable pay — verified against
   //    an employee with a voluntary contribution whose taxable pay matched
   //    exactly without subtracting it.
-  const taxable_pay = +(
-    gross_salary - defined_pension_ee - nssf_t1 - nssf_t2
-  ).toFixed(2)
+  const taxable_pay_raw = gross_salary - defined_pension_ee_raw - nssf_t1_raw - nssf_t2_raw
 
-  // 4. Gross PAYE from slabs
-  const gross_paye = +computeGrossPAYE(taxable_pay).toFixed(2)
+  // 4. Gross PAYE from slabs. Confirmed-exception employees compute their
+  //    band tax on (Gross − flat 20,000) with NSSF excluded — see file header.
+  const paye_band_base = excludeNssfFromPayeBands
+    ? gross_salary - RULES.pensionEmployeeCap
+    : taxable_pay_raw
+  const gross_paye_raw = computeGrossPAYE(paye_band_base)
 
   // 5. Reliefs — use the employee's override if one is set (parent-company/
   //    expatriate staff on a different relief arrangement), otherwise the
   //    standard KES 2,400/month.
-  const personal_relief = personal_relief_override ?? 2400
-  const nhif_relief = 0                  // SHIF relief currently 0 per the sheet
-  const ahl_relief = +Math.min(ahl * 0.15, ahl).toFixed(2)  // 15% of AHL, verified exact
+  const personal_relief_raw = personal_relief_override ?? RULES.personalReliefStandard
+  const nhif_relief_raw = RULES.nhifReliefRate
+  const ahl_relief_raw = Math.min(ahl_raw * RULES.ahlReliefRate, ahl_raw)
 
   // 6. Net PAYE
-  const net_paye = +Math.max(
-    gross_paye - personal_relief - nhif_relief - ahl_relief,
+  const net_paye_raw = Math.max(
+    gross_paye_raw - personal_relief_raw - nhif_relief_raw - ahl_relief_raw,
     0
-  ).toFixed(2)
+  )
 
   // 7. Total deductions — Net Pay must still subtract the non-cash fringe
   //    benefit separately (see step 8): it's taxed as part of gross but
   //    never actually paid out in cash.
-  const total_deductions = +(
-    net_paye + nssf_t1 + nssf_t2 + shif + ahl
-    + defined_pension_ee + total_voluntary
+  const total_deductions_raw =
+    net_paye_raw + nssf_t1_raw + nssf_t2_raw + shif_raw + ahl_raw
+    + defined_pension_ee_raw + total_voluntary_raw
     + advances + helb + company_loan + bank_loan + sacco
-  ).toFixed(2)
 
   // 8. Net salary — subtract non-cash fringe benefit (it's taxed but not
   //    paid in cash) in addition to total deductions. Verified exact
   //    against multiple employees with and without fringe benefits.
-  const net_salary = +(gross_salary - fringe_benefit - total_deductions).toFixed(2)
+  const net_salary_raw = gross_salary - fringe_benefit - total_deductions_raw
 
   // 9. Legacy aliases
-  const allowances = +(fringe_benefit + transport_allowance + bonus_commission).toFixed(2)
-  const nssf = nssf_t1 + nssf_t2
-  const nhif = shif
-  const paye = net_paye
-  const deductions = total_deductions
+  const allowances_raw = fringe_benefit + transport_allowance + bonus_commission
+  const nssf_raw = nssf_t1_raw + nssf_t2_raw
+
+  const round2 = (n: number) => +n.toFixed(2)
 
   return {
-    gross_salary,
-    nssf_t1, nssf_t2, shif, ahl,
-    defined_pension_ee, defined_pension_er,
-    taxable_pay, gross_paye,
-    personal_relief, nhif_relief, ahl_relief, net_paye,
-    allowances, deductions, nssf, nhif, paye, net_salary,
-    total_deductions,
+    gross_salary: round2(gross_salary),
+    nssf_t1: round2(nssf_t1_raw), nssf_t2: round2(nssf_t2_raw), shif: round2(shif_raw), ahl: round2(ahl_raw),
+    defined_pension_ee: round2(defined_pension_ee_raw), defined_pension_er: round2(defined_pension_er_raw),
+    taxable_pay: round2(taxable_pay_raw), gross_paye: round2(gross_paye_raw),
+    personal_relief: round2(personal_relief_raw), nhif_relief: round2(nhif_relief_raw),
+    ahl_relief: round2(ahl_relief_raw), net_paye: round2(net_paye_raw),
+    allowances: round2(allowances_raw), deductions: round2(total_deductions_raw),
+    nssf: round2(nssf_raw), nhif: round2(shif_raw), paye: round2(net_paye_raw),
+    net_salary: round2(net_salary_raw),
+    total_deductions: round2(total_deductions_raw),
   }
 }
 
@@ -255,7 +290,7 @@ export function buildGLPosting(employees: EmployeeSummary[]): GLPostingSummary {
   const nssf_ee = +employees.reduce((s, e) => s + e.nssf_t1 + e.nssf_t2, 0).toFixed(2)
   const nssf_er = +employees.reduce((s, e) => s + (e.nssf_t1 + e.nssf_t2), 0).toFixed(2)
   const nssf_total = +(nssf_ee + nssf_er).toFixed(2)
-  const nita_total = +(employees.length * 50).toFixed(2)      // KES 50 per employee
+  const nita_total = +(employees.length * RULES.nitaFlatPerEmployee).toFixed(2)
   const pension_total = +employees.reduce((s, e) => s + e.defined_pension_ee, 0).toFixed(2)
   const subtotal = +(gross_salaries + ahl_total + nssf_total + nita_total + pension_total).toFixed(2)
   const fbt_other = 0  // Can be extended for FBT separately

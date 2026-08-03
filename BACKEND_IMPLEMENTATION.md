@@ -4,19 +4,26 @@ This document provides a production-ready blueprint for transitioning the Chrysa
 
 ---
 
-## 0. Implementation Status (as of 2026-08-02)
+## 0. Implementation Status (as of 2026-08-03)
 
 | Area | Status | Notes |
 | :--- | :--- | :--- |
-| Postgres schema (§2) | ✅ Live | All 12 tables + enums confirmed against the live DB. Tracked snapshot: `schema.sql` (regenerate after further schema changes). |
-| RLS + `get_user_role()` (§3) | ✅ Live | Shipped via `supabase/migrations/20260802201854_finalize_backend_spec.sql`. RLS enabled on all 12 tables; policies follow the role matrix in §3.1, with `invoices` policies matching §3.3 verbatim. |
-| `auth.users` → `profiles` trigger | ✅ Live | `handle_new_user()` + `on_auth_user_created` trigger, added in the same migration. Not in the original spec, but required for §4.1 sign-up to work — without it, new auth users have no `profiles` row. |
-| Storage bucket `finops-documents` | ✅ Live | Created in the same migration, private (`public: false`), with `storage.objects` policies scoped to the bucket. |
-| §4.1 Login / Sign-up | ✅ Implemented | Real Supabase Auth (`signInWithPassword`, `signUp`). See §4.1 below for details, including a Next.js-16-specific gotcha (`proxy.ts`, not `middleware.ts`). |
-| §4.6 Payroll Automator | ✅ Implemented | `lib/payroll-engine.ts` + `app/api/payroll/route.ts`, reads/writes `employees` / `payroll_runs` / `payroll_register_entries`, with a `lib/seeds.ts` fallback if Supabase is unreachable. Known deviations from §4.6's statutory constants are noted inline in that section. |
-| §4.2–4.5, 4.7, 4.8 (Dashboard, Invoice, AP Recon, WHT, Documents, Audit Trail) | ⬜ Not started | Still reading from `lib/seeds.ts` / local `useState`. No `supabase` calls yet. |
-| `reconciliation_ledger` table (referenced in §4.4) | ⬜ Not started | Referenced in the page spec but never given a column definition in §2; needs a schema decision before implementation. |
+| Postgres schema (§2) | ✅ Live | All 12 original tables + `reconciliation_ledger` (13 total) + enums confirmed against the live DB. Tracked snapshot: `schema.sql` (stale again as of this update — regenerate after further schema changes). |
+| RLS + `get_user_role()` (§3) | ✅ Live | Shipped via `supabase/migrations/20260802201854_finalize_backend_spec.sql` and `20260802211022_add_reconciliation_ledger.sql`. RLS enabled on all 13 tables; policies follow the role matrix in §3.1, with `invoices` policies matching §3.3 verbatim. |
+| `auth.users` → `profiles` trigger | ✅ Live | `handle_new_user()` + `on_auth_user_created` trigger. Required for §4.1 sign-up to work — without it, new auth users have no `profiles` row. |
+| Storage bucket `finops-documents` | ✅ Live | Private (`public: false`), with `storage.objects` policies scoped to the bucket. Actively used by §4.7 document upload/view. |
+| §4.1 Login / Sign-up | ✅ Implemented | Real Supabase Auth (`signInWithPassword`, `signUp`). See §4.1 below, including a Next.js-16-specific gotcha (`proxy.ts`, not `middleware.ts`). |
+| §4.2 Dashboard | ✅ Implemented | No page code changes needed — it already read exclusively from `FinOpsContext`, which is now Supabase-backed. |
+| §4.3 Invoice Processing | ✅ Implemented | Real insert/update/delete against `invoices`, gated by the `vendors` FK (see reference-data seeding below). |
+| §4.4 AP Reconciliation | ✅ Implemented | New `reconciliation_ledger` table (schema decision resolved — see §2.12 below); one row per matched (payment, invoice) pair, written on "Approve Recon Run" alongside a real audit log entry. |
+| §4.5 Withholding Tax Manager | ✅ Implemented | Real insert/bulk-update against `wht_payments`. The "pending" rows computed from unfiled invoices now look up the vendor's real `tax_id_pin` instead of a randomly generated fake PIN. |
+| §4.6 Payroll Automator | ✅ Implemented | Unchanged from the prior pass — `lib/payroll-engine.ts` + `app/api/payroll/route.ts`. All 49 employee records now carry realistic (synthetic, not real-person) Kenyan identity data — see note below. |
+| §4.7 Document Store | ✅ Implemented | Real file picker → `finops-documents` Storage upload → `documents` metadata insert. View/Download use `createSignedUrl`. Delete is a soft-delete (`is_deleted` + `deletion_reason`), matching the doc's audit-trail requirement — no hard deletes. |
+| §4.8 Audit Trail | ✅ Implemented | No page code changes needed — reads `FinOpsContext.auditTrail`, now backed by real `audit_logs` inserts from every mutating action across the app (vendor, invoice, WHT, checklist, document, reconciliation). |
+| `reconciliation_ledger` table | ✅ Resolved | See §2.12 — one row per matched invoice; unmatched payments get a single row with `invoice_id = NULL`. |
+| `gl_accounts` / `budgets` / `checklist_items` writes, `/chart-of-accounts`, `/budget`, `/vendors`, `/month-end` pages | ⬜ Out of scope | Not part of §4's page list. `checklist_items` is read-wired (Dashboard depends on it) and seeded with the 15 standard month-end tasks, but its write path (`/month-end`) wasn't touched. `gl_accounts`/`budgets` remain on local mock state. |
 | `payroll_constants` table (§4.6 TIP) | ⬜ Not started | Explicitly framed as a future enhancement, not a hard requirement. |
+| Employee identity data | ✅ Regenerated | The live import (`scripts/import-employees-to-supabase.js`) could only recover real names for ~10 of 49 employees from the source workbook — the rest had no name/bank data at all, only anonymized staff numbers. All 49 records now have synthetic-but-realistic Kenyan names, national IDs, KRA PINs, SHA/SHIF numbers, and bank details generated for demo purposes; all salary figures are untouched (still the real computed values from the reference workbook). |
 
 ---
 
@@ -307,11 +314,29 @@ CREATE TABLE public.audit_logs (
 );
 ```
 
+### 2.12 Reconciliation Ledger Table
+> Referenced in §4.4 (AP Reconciliation) but never given a column definition anywhere in the original spec. Schema resolved and shipped via `supabase/migrations/20260802211022_add_reconciliation_ledger.sql`. One row per matched (payment, invoice) pair — a multi-invoice match produces multiple rows sharing the same `payment_ref`; an unmatched payment gets a single row with `invoice_id = NULL`.
+```sql
+CREATE TABLE public.reconciliation_ledger (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    payment_ref VARCHAR(100) NOT NULL,
+    vendor_name VARCHAR(255) NOT NULL,
+    payment_amount_kes NUMERIC(15, 2) NOT NULL,
+    payment_date DATE NOT NULL,
+    invoice_id UUID REFERENCES public.invoices(id) ON DELETE SET NULL,
+    match_status VARCHAR(30) NOT NULL, -- 'Matched' | 'Unmatched' | 'Multi-Invoice Match'
+    confidence VARCHAR(50),
+    approved_by VARCHAR(100) NOT NULL,
+    approved_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('Africa/Nairobi'::text, now()),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('Africa/Nairobi'::text, now())
+);
+```
+
 ---
 
 ## 3. Authentication & Row Level Security (RLS)
 
-> **Status: implemented.** RLS is enabled on all 12 tables and `get_user_role()` exists on the live database — see `supabase/migrations/20260802201854_finalize_backend_spec.sql` for the exact policies shipped (they extend the role matrix below to every table, not just `invoices`). One caveat carried over from this spec: the "only `finance_manager` can approve" policy on `invoices` (§3.3) and the broad "all accountants can write" policy are both permissive policies evaluated with OR semantics in Postgres, so a `senior_accountant` is not actually blocked from flipping `status` to `Approved` by RLS alone — enforcing that specific column-level restriction would need a trigger or a check constraint, not row-level policies.
+> **Status: implemented.** RLS is enabled on all 13 tables and `get_user_role()` exists on the live database — see `supabase/migrations/20260802201854_finalize_backend_spec.sql` and `20260802211022_add_reconciliation_ledger.sql` for the exact policies shipped (they extend the role matrix below to every table, not just `invoices`). One caveat carried over from this spec: the "only `finance_manager` can approve" policy on `invoices` (§3.3) and the broad "all accountants can write" policy are both permissive policies evaluated with OR semantics in Postgres, so a `senior_accountant` is not actually blocked from flipping `status` to `Approved` by RLS alone — enforcing that specific column-level restriction would need a trigger or a check constraint, not row-level policies.
 
 Supabase Row Level Security will enforce role-based access control directly in Postgres:
 
@@ -377,50 +402,27 @@ Here is the exact page-by-page mapping mapping state transformations from mock f
 - Verified end-to-end against the live Supabase project: sign-up → `handle_new_user()` trigger → `profiles` row created → sign-in → RLS-gated self-read of `profiles` → `get_user_role()` all resolve correctly.
 
 ### 4.2 Dashboard (`/dashboard`)
-- **Current Mock Flow**: Computes aggregations over local array state.
-- **Supabase API Fetch**:
-  ```ts
-  // Fetch high-level KPIs
-  const { data: invoices } = await supabase.from('invoices').select('total, status, wht_amount');
-  const { data: wht } = await supabase.from('wht_payments').select('wht_amount, status');
-  ```
-- **Operations**:
-  - Calculate `Total Invoices Processed` (count of invoices).
-  - Calculate `Outstanding WHT` (sum of `wht_amount` where status = `'Calculated'`).
-  - Calculate `Days until iTax Filing Deadline` (calculate distance dynamically relative to the 20th of the current month in `Africa/Nairobi` timezone).
+> **Status: implemented.** No changes were needed to `app/(workspace)/dashboard/page.tsx` itself — it already read exclusively from `useFinOps()` (`invoices`, `whtPayments`, `checklist`, `auditTrail`, `vendors`), and that context is now Supabase-backed. All KPI calculations (`Total Invoices Processed`, `Outstanding WHT`, `Days until iTax Filing Deadline`, checklist completion %) now run over real rows.
 
 ### 4.3 Invoice Processing (`/invoice`)
-- **Current Mock Flow**: Adds invoice item to local array, triggers local validation flags function in client-side.
-- **Supabase Integration**:
-  - **Upload Invoice**: Upload PDF file to Supabase Storage Bucket `finops-documents` using `supabase.storage.from('finops-documents').upload()`.
-  - **Save Record**: Insert a row in the `invoices` table mapping file path URL, parsed subtotal, KRA PIN, VAT values, and status `'Pending'`.
-  - **Validate**: Trigger `validateInvoice` function (located in `lib/api-logic.ts`) server-side or client-side upon form completion.
-  - **Approve Invoice**: Requires `finance_manager` session. Triggers an update query to change status to `'Approved'` and logs approval parameters:
-    ```ts
-    await supabase.from('invoices')
-      .update({ status: 'Approved', approved_by: currentUser, approval_date: new Date() })
-      .eq('id', invoiceId);
-    ```
+> **Status: implemented** (file-attachment upload deferred — see below).
+- No changes needed to the page itself — it already routed all reads/writes through `useFinOps()`.
+- `components/finops-provider.tsx`'s `addInvoice`/`updateInvoice`/`deleteInvoice` now perform real `invoices` table inserts/updates/deletes. Insert lets Postgres generate the row's UUID (`gen_random_uuid()`) rather than the client-generated temp ID; the temp ID is swapped for the real one once the insert resolves.
+- `validateInvoice` (`lib/api-logic.ts`) already existed as a pure client-side function and needed no changes.
+- The `vendors` table is a hard FK dependency (`invoices.vendor_id REFERENCES vendors`) — it was empty in the live DB, so the 5 reference vendors from the original mock were seeded in via a one-off script before this could work at all.
+- **Not implemented**: actual PDF/file upload for the invoice document itself (the page has no file input — it's an OCR-simulation preset picker). Only the invoice *record* is real; attaching the source file to Storage would need the same file-picker treatment given to Document Store (§4.7).
 
 ### 4.4 AP Reconciliation (`/ap-reconciliation`)
-- **Current Mock Flow**: Runs AP algorithm over dynamic mock array.
-- **Supabase Integration**:
-  - Read outstanding approved invoices: `supabase.from('invoices').select('*').eq('status', 'Approved')`.
-  - Read bank payments (inserted via bank file feeds or bank statements table).
-  - Execute `runAPReconciliation(payments, approvedInvoices)` algorithm.
-  - **Reconciliation Approval**: Save matching mappings to a new table `reconciliation_ledger` and post audit log entry to `audit_logs` table.
+> **Status: implemented.**
+- Bank payments remain a local, in-page mock array (`useState`) — no bank-feed/bank-statement table exists in the schema, and the spec doesn't define one either.
+- `runAPReconciliation(payments, approvedInvoices)` (`lib/api-logic.ts`) is unchanged — a pure function over the real `invoices` list.
+- **Reconciliation Approval**: `approveReconciliation()` in the page now inserts one row per matched (payment, invoice) pair into the new `reconciliation_ledger` table (see §2.12 — this table didn't exist anywhere in the original spec and had to be designed from the §4.4 description), then calls `addAuditLog(...)`, which persists to `audit_logs`.
 
 ### 4.5 Withholding Tax Manager (`/wht-calculator`)
-- **Current Mock Flow**: Pulls wht array, processes bulk selection, triggers mock CSV generation.
-- **Supabase Integration**:
-  - Query computed tax rows: `supabase.from('wht_payments').select('*')`.
-  - **iTax Bulk Filing**: Select rows, compile them, trigger CSV client download.
-  - **Submit KRA Filing Ref**: Transition statuses of selected rows in bulk:
-    ```ts
-    await supabase.from('wht_payments')
-      .update({ status: 'Filed', kra_reference: kraRef })
-      .in('id', selectedIds);
-    ```
+> **Status: implemented.**
+- No page-level changes needed for reads — `whtPayments`/`invoices` come from `useFinOps()`.
+- `fileWhtPayments(ids, kraRef)` performs the real bulk `.update({ status: 'Filed', kra_reference }).in('id', ids)` against `wht_payments`. The "pending" rows synthesized client-side from unfiled invoices are excluded from this DB call (they have no row yet) and are filtered out by an ID-prefix check (`WHT-COMP-`).
+- Fixed in passing: the pending-invoice preview rows previously showed a **randomly generated fake vendor PIN** (`Math.random()`) instead of the vendor's real `tax_id_pin` — now looked up from the real `vendors` list by `vendor_id`.
 
 ### 4.6 Payroll Automator (`/payroll`)
 - **Current Mock Flow**: Loads static seed employee list, calculates PAYE on client calculations.
@@ -459,17 +461,13 @@ To ensure compliance with the Kenya Revenue Authority (KRA), the backend calcula
 > In the production implementation, these values should be loaded from a `public.payroll_constants` table rather than hardcoded in the codebase, enabling effortless updates when KRA introduces new slabs or rate adjustments.
 
 ### 4.7 Document Store (`/document-store`)
-- **Current Mock Flow**: Mock arrays.
-- **Supabase Integration**:
-  - Display files from table: `supabase.from('documents').select('*')`.
-  - Upload file: Upload file binary to storage bucket, write document metadata row (`name`, `tag`, `storage_path`, `size`, `uploaded_by`) to database.
-  - Delete file: Update `is_deleted` column to `true` and save deletion reason for corporate audit trail. Do not physical remove files from bucket unless specifically requested (retains audit trails).
+> **Status: implemented.**
+- The page previously had no real file input at all — "upload" just typed a filename string. It now has an actual `<input type="file">`; `uploadDocument(file, tag, displayName?)` uploads the binary to the `finops-documents` bucket, then inserts the `documents` metadata row (`name`, `tag`, `storage_path`, `size` in bytes, `uploaded_by`). The in-app `size` field is formatted to a human string (`"420 KB"`) at read time from the real byte count.
+- View/Download both call `supabase.storage.from('finops-documents').createSignedUrl(path, 60)` and open the result — previously both buttons just showed a placeholder `alert()`.
+- Delete sets `is_deleted = true` + `deletion_reason`, exactly as specified — no hard delete, no physical bucket removal.
 
 ### 4.8 Audit Trail (`/audit-trail`)
-- **Current Mock Flow**: Pushes actions to state logger.
-- **Supabase Integration**:
-  - Read log files: `supabase.from('audit_logs').select('*').order('timestamp', { ascending: false })`.
-  - Log events: Since logging must be robust and persistent, any write transaction across the system will insert a row in `audit_logs`. We can also configure a Postgres database trigger to automatically capture insertions/deletions on critical tables like `vendors` and `invoices`.
+> **Status: implemented.** No page-level changes needed — it already read exclusively from `useFinOps().auditTrail`. That list is now populated by `supabase.from('audit_logs').select('*').order('timestamp', { ascending: false })` on load, and every mutating action across the app (vendor, invoice, WHT, checklist, document, reconciliation) calls the shared `addAuditLog()`, which inserts a real row (mapping the app-facing `user` field to the DB's `operator_user` column) in addition to updating local state optimistically. The optional "automatic DB trigger to capture insertions/deletions" idea from the original spec was not implemented — audit entries are still written explicitly by application code, not by a Postgres trigger.
 
 ---
 
@@ -532,7 +530,11 @@ export async function createSupabaseServerClient() {
 
 ## 6. Implementation Stages & Next Steps
 
-1. ~~**Schema Execution**: Connect to Supabase project SQL Editor and run the schema setup queries.~~ ✅ Done — schema confirmed live, RLS/functions/trigger/storage bucket added via `supabase/migrations/20260802201854_finalize_backend_spec.sql`.
-2. **Mock Data Migration**: `scripts/import-employees-to-supabase.js` covers `employees`. Other tables (`vendors`, `invoices`, `wht_payments`, `gl_accounts`, `checklist_items`, `budgets`, `documents`, `audit_logs`) still need a loader from `lib/seeds.ts`.
-3. **Setup Supabase Providers**: Partially done — §4.1 (auth) and §4.6 (payroll) are wired to Supabase. Remaining: §4.2–4.5, 4.7, 4.8 (dashboard, invoice, AP reconciliation, WHT manager, document store, audit trail) still read from `lib/seeds.ts` / local `useState` and need the same treatment.
-4. **Open design decisions before continuing**: the `reconciliation_ledger` table needs a column spec (referenced in §4.4 but never defined), and a decision on whether `payroll_constants` (§4.6 TIP) is worth building now or deferred.
+1. ~~**Schema Execution**: Connect to Supabase project SQL Editor and run the schema setup queries.~~ ✅ Done — schema confirmed live, RLS/functions/trigger/storage bucket/`reconciliation_ledger` all added via migration.
+2. **Mock Data Migration**: `scripts/import-employees-to-supabase.js` covers `employees` (all 49 rows now carry regenerated realistic identity data — salary figures untouched). Reference/master data for `vendors` (5) and `checklist_items` (15) has been seeded directly into the live DB — required as an FK prerequisite for `invoices` to work at all, since `vendors` was empty. `gl_accounts`/`budgets` remain unseeded (out of scope — no page in this pass reads them from Supabase). `invoices`/`wht_payments`/`documents`/`audit_logs` are intentionally left empty — they're transactional records meant to be created through real usage, not pre-seeded fake history.
+3. ~~**Setup Supabase Providers**~~ ✅ Done — all of §4.1–4.8 except the two explicitly-out-of-scope items below are now wired to Supabase through `components/finops-provider.tsx` and page-level calls.
+4. **Remaining, explicitly out of scope for this pass**:
+   - `reconciliation_ledger`'s schema decision is resolved (§2.12) — no longer open.
+   - `payroll_constants` (§4.6 TIP) — still a deferred future enhancement, not required.
+   - Invoice file-attachment upload (§4.3) — the invoice *record* is real, but the source PDF/file itself isn't attached to Storage; would need the same file-picker treatment as §4.7.
+   - `gl_accounts`, `budgets` writes, and the `/chart-of-accounts`, `/budget`, `/vendors`, `/month-end` pages — never part of §4's page list, still on local mock state (though `vendors` and `checklist_items` are now real for the pages that read them).

@@ -17,6 +17,8 @@ function normalizeEmployeeRow(row: Record<string, unknown>) {
     company_loan: Number(row.company_loan ?? 0),
     bank_loan: Number(row.bank_loan ?? 0),
     sacco: Number(row.sacco ?? 0),
+    personal_relief_override: row.personal_relief_override != null ? Number(row.personal_relief_override) : undefined,
+    excludeNssfFromPayeBands: Boolean(row.exclude_nssf_from_paye_bands ?? false),
   }
 
   const result = computePayroll(input)
@@ -63,17 +65,24 @@ function normalizeEmployeeRow(row: Record<string, unknown>) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = createSupabaseAdminClient()
+  const month = new URL(request.url).searchParams.get("month")
+
+  let run: { status: string } | null = null
+  if (supabase && month) {
+    const { data } = await supabase.from("payroll_runs").select("status").eq("month", month).single()
+    run = data ?? null
+  }
 
   if (supabase) {
     const { data, error } = await supabase.from("employees").select("*").order("name")
     if (!error && Array.isArray(data)) {
-      return NextResponse.json({ employees: data.map((row) => normalizeEmployeeRow(row as Record<string, unknown>)) })
+      return NextResponse.json({ employees: data.map((row) => normalizeEmployeeRow(row as Record<string, unknown>)), run })
     }
   }
 
-  return NextResponse.json({ employees: initialEmployees })
+  return NextResponse.json({ employees: initialEmployees, run })
 }
 
 export async function POST(request: Request) {
@@ -98,6 +107,8 @@ export async function POST(request: Request) {
       company_loan: number
       bank_loan: number
       sacco: number
+      personal_relief_override?: number
+      exclude_nssf_from_paye_bands?: boolean
     }>
   }
 
@@ -118,6 +129,8 @@ export async function POST(request: Request) {
       company_loan: employee.company_loan,
       bank_loan: employee.bank_loan,
       sacco: employee.sacco,
+      personal_relief_override: employee.personal_relief_override,
+      excludeNssfFromPayeBands: employee.exclude_nssf_from_paye_bands,
     })
 
     return {

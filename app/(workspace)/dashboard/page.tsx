@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { useFinOps } from "@/components/finops-provider"
 import { useTheme } from "@/components/theme-provider"
 import {
@@ -14,13 +14,66 @@ import {
   ArrowUpRight,
   ShieldCheck,
   Building,
-  ArrowRight
+  ArrowRight,
+  Wallet,
+  Hourglass,
 } from "lucide-react"
 import Link from "next/link"
 
 export default function DashboardPage() {
   const { invoices, whtPayments, checklist, auditTrail, vendors } = useFinOps()
   const { cardRadius, buttonRadius, accentText, accentBg, accentBadge } = useTheme()
+
+  // Payroll data lives outside FinOpsProvider (see app/(workspace)/payroll/page.tsx —
+  // it's Supabase-backed via /api/payroll, not the provider's local state), so the
+  // dashboard fetches it independently, same pattern as the payroll page itself.
+  const payrollMonth = useMemo(() => new Date().toISOString().slice(0, 7), [])
+  const [payrollHeadcount, setPayrollHeadcount] = useState(0)
+  const [payrollRunStatus, setPayrollRunStatus] = useState<string | null>(null)
+
+  useEffect(() => {
+    let ignore = false
+    fetch(`/api/payroll?month=${payrollMonth}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) => {
+        if (ignore || !payload) return
+        setPayrollHeadcount(Array.isArray(payload.employees) ? payload.employees.length : 0)
+        setPayrollRunStatus(payload.run?.status ?? null)
+      })
+      .catch(() => {
+        if (!ignore) {
+          setPayrollHeadcount(0)
+          setPayrollRunStatus(null)
+        }
+      })
+    return () => { ignore = true }
+  }, [payrollMonth])
+
+  // Payroll statutory remittance deadline — PAYE/NSSF/SHIF/AHL are due by the
+  // 9th of the month FOLLOWING the pay month, distinct from the 20th-of-month
+  // VAT/WHT deadline computed below (kraDeadlineStats) — different tax, different date.
+  const payrollDeadlineStats = useMemo(() => {
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth()
+
+    const deadline = new Date(currentYear, currentMonth, 9, 23, 59, 59)
+    let daysRemaining = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+
+    if (daysRemaining < 0) {
+      const nextMonth = currentMonth === 11 ? 0 : currentMonth + 1
+      const nextYear = currentMonth === 11 ? currentYear + 1 : currentYear
+      const nextDeadline = new Date(nextYear, nextMonth, 9, 23, 59, 59)
+      daysRemaining = Math.ceil((nextDeadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    }
+
+    let status: "urgent" | "warning" | "secure" = "secure"
+    if (daysRemaining <= 2) status = "urgent"
+    else if (daysRemaining <= 5) status = "warning"
+
+    const formattedDeadline = deadline.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    return { daysRemaining, status, formattedDeadline }
+  }, [])
 
   // 1. Calculations
   const invoiceStats = useMemo(() => {
@@ -200,6 +253,60 @@ export default function DashboardPage() {
                 className={`h-full ${accentBg} transition-all duration-300`}
                 style={{ width: `${checklistProgress}%` }}
               />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Payroll KPI Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Payroll Progress */}
+        <Link href="/payroll" className={`p-4 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 flex flex-col justify-between h-28 hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20 transition-colors ${cardRadius}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono uppercase text-zinc-400 dark:text-zinc-500 tracking-wider">Payroll Progress</span>
+            <Wallet className={`h-4 w-4 ${accentText}`} />
+          </div>
+          <div>
+            <span className="text-lg font-bold tracking-tight font-mono text-zinc-900 dark:text-zinc-100">
+              {payrollHeadcount} <span className="text-xs font-normal text-zinc-400">staff</span>
+            </span>
+            <p className="text-zinc-400 text-[10px] mt-1 font-mono uppercase">
+              Status: {payrollRunStatus ?? "No run yet"} — {payrollMonth}
+            </p>
+          </div>
+        </Link>
+
+        {/* Pending Approvals */}
+        <div className={`p-4 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 flex flex-col justify-between h-28 ${cardRadius}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono uppercase text-zinc-400 dark:text-zinc-500 tracking-wider">Pending Approvals</span>
+            <Hourglass className={`h-4 w-4 ${payrollRunStatus === "Submitted" ? "text-amber-500" : accentText}`} />
+          </div>
+          <div>
+            <span className="text-lg font-bold tracking-tight font-mono text-zinc-900 dark:text-zinc-100">
+              {payrollRunStatus === "Submitted" ? 1 : 0} <span className="text-xs font-normal text-zinc-400">runs</span>
+            </span>
+            <p className="text-zinc-400 text-[10px] mt-1 font-mono">
+              {payrollRunStatus === "Submitted" ? `${payrollMonth} awaiting finance manager sign-off` : "Nothing awaiting sign-off"}
+            </p>
+          </div>
+        </div>
+
+        {/* Payroll Statutory Remittance Countdown */}
+        <div className={`p-4 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 flex flex-col justify-between h-28 ${cardRadius}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono uppercase text-zinc-400 dark:text-zinc-500 tracking-wider">Payroll Remittance Countdown</span>
+            <Clock className={`h-4 w-4 ${payrollDeadlineStats.status === "urgent" ? "text-rose-500 animate-pulse" : payrollDeadlineStats.status === "warning" ? "text-amber-500" : accentText}`} />
+          </div>
+          <div>
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg font-bold tracking-tight font-mono text-zinc-900 dark:text-zinc-100">
+                {payrollDeadlineStats.daysRemaining}
+              </span>
+              <span className="text-xs font-normal text-zinc-400">days left</span>
+            </div>
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-zinc-400 text-[9px] font-mono">PAYE/NSSF/SHIF/AHL by {payrollDeadlineStats.formattedDeadline}</span>
             </div>
           </div>
         </div>

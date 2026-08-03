@@ -60,8 +60,7 @@ export function buildPayrollRun(month: string, employees: PayrollEmployeeRecord[
   }
 }
 
-export function generatePayslipPDF(employee: PayrollEmployeeRecord, month: string): Blob {
-  const doc = new jsPDF({ unit: "pt", format: "a4" })
+function drawPayslipPage(doc: jsPDF, employee: PayrollEmployeeRecord, month: string) {
   const y = 40
 
   doc.setFont("helvetica", "bold")
@@ -91,9 +90,23 @@ export function generatePayslipPDF(employee: PayrollEmployeeRecord, month: strin
     doc.text(`KES ${Number(amount).toFixed(2)}`, 380, currentY)
     currentY += 18
   })
+}
 
-  const blob = doc.output("blob")
-  return blob
+export function generatePayslipPDF(employee: PayrollEmployeeRecord, month: string): Blob {
+  const doc = new jsPDF({ unit: "pt", format: "a4" })
+  drawPayslipPage(doc, employee, month)
+  return doc.output("blob")
+}
+
+// One PDF, one page per employee — avoids needing a zip library for the
+// "generate all payslips" one-click action.
+export function generateAllPayslipsPDF(employees: PayrollEmployeeRecord[], month: string): Blob {
+  const doc = new jsPDF({ unit: "pt", format: "a4" })
+  employees.forEach((employee, i) => {
+    if (i > 0) doc.addPage()
+    drawPayslipPage(doc, employee, month)
+  })
+  return doc.output("blob")
 }
 
 export function generatePayrollWorkbook(run: PayrollRunResult): Blob {

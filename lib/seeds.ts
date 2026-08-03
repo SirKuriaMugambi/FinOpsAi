@@ -69,10 +69,19 @@ export interface Employee {
   // Identity
   id: string               // Staff No
   name: string
+  national_id?: string
   kra_pin: string          // KRA PIN
+  sha_pin?: string | null
   grade: string
   cost_centre: string      // e.g. "121", "204", "511", "512"
   department: string       // e.g. "Finance", "Technical", "Production"
+  bank_name?: string
+  bank_account_number?: string
+
+  // Per-employee statutory exceptions — see lib/payroll-engine.ts file header.
+  // Both default to standard treatment; only set for employees Tony confirms.
+  personal_relief_override?: number | null
+  exclude_nssf_from_paye_bands?: boolean
 
   // Earnings (matching Excel Sheet 2 columns 4-9)
   base_salary: number             // Basic
@@ -151,6 +160,7 @@ export interface Document {
   uploaded_by: string
   uploaded_at: string
   size: string
+  storage_path?: string
   associated_tx?: string
 }
 

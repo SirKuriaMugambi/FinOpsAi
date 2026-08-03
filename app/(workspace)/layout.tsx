@@ -35,6 +35,7 @@ import {
   ArrowRight,
   Clock,
   Briefcase,
+  IdCard,
 } from "lucide-react";
 
 interface NavItem {
@@ -135,6 +136,7 @@ export default function WorkspaceLayout({
       title: "Operations & Reports",
       items: [
         { name: "Payroll & PAYE", href: "/payroll", icon: Wallet },
+        { name: "Employee Master", href: "/employees", icon: IdCard },
         { name: "Budget vs Actual", href: "/budget", icon: PieChart },
         {
           name: "Financial Statements",
