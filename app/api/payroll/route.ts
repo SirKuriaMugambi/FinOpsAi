@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { initialEmployees } from "@/lib/seeds"
 import { buildPayrollVarianceReport, computePayroll, type EmployeeSummary } from "@/lib/payroll-engine"
 import { createSupabaseAdminClient } from "@/lib/supabase-server"
+import { requireRole } from "@/lib/supabase"
 
 function normalizeEmployeeRow(row: Record<string, unknown>) {
   const input = {
@@ -18,7 +19,10 @@ function normalizeEmployeeRow(row: Record<string, unknown>) {
     bank_loan: Number(row.bank_loan ?? 0),
     sacco: Number(row.sacco ?? 0),
     personal_relief_override: row.personal_relief_override != null ? Number(row.personal_relief_override) : undefined,
-    excludeNssfFromPayeBands: Boolean(row.exclude_nssf_from_paye_bands ?? false),
+    paye_band_flat_deduction: row.paye_band_flat_deduction != null ? Number(row.paye_band_flat_deduction) : undefined,
+    pension_rate_override: row.pension_rate_override != null ? Number(row.pension_rate_override) : undefined,
+    nssf_t2_override: row.nssf_t2_override != null ? Number(row.nssf_t2_override) : undefined,
+    ahl_relief_override: row.ahl_relief_override != null ? Number(row.ahl_relief_override) : undefined,
   }
 
   const result = computePayroll(input)
@@ -66,6 +70,11 @@ function normalizeEmployeeRow(row: Record<string, unknown>) {
 }
 
 export async function GET(request: Request) {
+  const guard = await requireRole("finance_manager")
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status })
+  }
+
   const supabase = createSupabaseAdminClient()
   const month = new URL(request.url).searchParams.get("month")
 
@@ -86,6 +95,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const guard = await requireRole("finance_manager")
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status })
+  }
+
   const body = (await request.json()) as {
     month?: string
     employees?: Array<{
@@ -108,7 +122,10 @@ export async function POST(request: Request) {
       bank_loan: number
       sacco: number
       personal_relief_override?: number
-      exclude_nssf_from_paye_bands?: boolean
+      paye_band_flat_deduction?: number
+      pension_rate_override?: number
+      nssf_t2_override?: number
+      ahl_relief_override?: number
     }>
   }
 
@@ -130,7 +147,10 @@ export async function POST(request: Request) {
       bank_loan: employee.bank_loan,
       sacco: employee.sacco,
       personal_relief_override: employee.personal_relief_override,
-      excludeNssfFromPayeBands: employee.exclude_nssf_from_paye_bands,
+      paye_band_flat_deduction: employee.paye_band_flat_deduction,
+      pension_rate_override: employee.pension_rate_override,
+      nssf_t2_override: employee.nssf_t2_override,
+      ahl_relief_override: employee.ahl_relief_override,
     })
 
     return {

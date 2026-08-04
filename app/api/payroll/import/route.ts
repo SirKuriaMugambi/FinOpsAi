@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createSupabaseAdminClient } from "@/lib/supabase-server"
+import { requireRole } from "@/lib/supabase"
 import { parsePayrollWorkbook, type ParsedPayrollRow } from "@/lib/excel-ingest"
 
 export interface ImportPreviewRow {
@@ -22,6 +23,11 @@ export interface ImportPreviewResult {
 // write step separate and explicit avoids silently overwriting salary data
 // from a malformed or wrong-month upload.
 export async function POST(request: Request) {
+  const guard = await requireRole("finance_manager")
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status })
+  }
+
   const supabase = createSupabaseAdminClient()
   if (!supabase) {
     return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 })

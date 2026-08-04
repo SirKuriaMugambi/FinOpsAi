@@ -1,19 +1,13 @@
 import { NextResponse } from "next/server"
 import { createSupabaseAdminClient } from "@/lib/supabase-server"
-import { createSupabaseServerClient } from "@/lib/supabase"
+import { requireRole } from "@/lib/supabase"
 
-// Draft → Submitted. Any authenticated user may submit a run they've
-// computed — approval (the actual sign-off gate) is a separate, role-gated
-// step below, not this one.
+// Draft → Submitted. Restricted to finance_manager — the whole payroll
+// module is finance-manager-only (see requireRole in lib/supabase.ts).
 export async function POST(request: Request) {
-  const authedSupabase = await createSupabaseServerClient()
-  if (!authedSupabase) {
-    return NextResponse.json({ error: "Backend is not configured" }, { status: 503 })
-  }
-
-  const { data: { user } } = await authedSupabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
+  const guard = await requireRole("finance_manager")
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status })
   }
 
   const body = (await request.json()) as { month?: string }
@@ -45,7 +39,7 @@ export async function POST(request: Request) {
 
   const { data: updated, error: updateError } = await supabase
     .from("payroll_runs")
-    .update({ status: "Submitted", submitted_by: user.id, submitted_at: new Date().toISOString() })
+    .update({ status: "Submitted", submitted_by: guard.user.id, submitted_at: new Date().toISOString() })
     .eq("id", run.id)
     .select("*")
     .single()

@@ -79,9 +79,12 @@ export interface Employee {
   bank_account_number?: string
 
   // Per-employee statutory exceptions — see lib/payroll-engine.ts file header.
-  // Both default to standard treatment; only set for employees Tony confirms.
+  // All default to standard treatment; only set for employees Tony confirms.
   personal_relief_override?: number | null
-  exclude_nssf_from_paye_bands?: boolean
+  paye_band_flat_deduction?: number | null
+  pension_rate_override?: number | null
+  nssf_t2_override?: number | null
+  ahl_relief_override?: number | null
 
   // Earnings (matching Excel Sheet 2 columns 4-9)
   base_salary: number             // Basic

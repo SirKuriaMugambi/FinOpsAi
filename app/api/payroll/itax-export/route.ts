@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server"
 import { createSupabaseAdminClient } from "@/lib/supabase-server"
+import { requireRole } from "@/lib/supabase"
 import { buildItaxExportCSV } from "@/lib/itax-export-builder"
 
 export async function GET(request: Request) {
+  const guard = await requireRole("finance_manager")
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status })
+  }
+
   const month = new URL(request.url).searchParams.get("month")
   if (!month) {
     return NextResponse.json({ error: "month query param is required, e.g. ?month=2026-08" }, { status: 400 })

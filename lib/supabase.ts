@@ -35,6 +35,26 @@ export async function getAuthedUserWithRole(): Promise<{ id: string; role: strin
   return { id: user.id, role: profile.role as string }
 }
 
+// Route Handler guard: requires an authenticated session with one of the
+// given roles. Returns { ok: true, user } or { ok: false, status, error } —
+// callers should `return NextResponse.json({ error }, { status })` on
+// failure. Necessary because the payroll/employees API routes use the
+// service-role admin client (createSupabaseAdminClient) to do their actual
+// data work, which BYPASSES Postgres RLS entirely — RLS alone does not
+// protect these endpoints, this explicit check is the real gate.
+export async function requireRole(
+  ...roles: string[]
+): Promise<{ ok: true; user: { id: string; role: string } } | { ok: false; status: number; error: string }> {
+  const authedUser = await getAuthedUserWithRole()
+  if (!authedUser) {
+    return { ok: false, status: 401, error: "Not authenticated" }
+  }
+  if (!roles.includes(authedUser.role)) {
+    return { ok: false, status: 403, error: "You don't have access to this module" }
+  }
+  return { ok: true, user: authedUser }
+}
+
 // Server Component / Route Handler client — reads the user's session from cookies.
 // Next.js 16: `cookies()` is async, and Server Components cannot write cookies
 // (middleware owns session refresh), so `setAll` is a best-effort no-op there.

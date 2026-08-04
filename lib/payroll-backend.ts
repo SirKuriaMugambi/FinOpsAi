@@ -60,36 +60,131 @@ export function buildPayrollRun(month: string, employees: PayrollEmployeeRecord[
   }
 }
 
+function monthLabel(month: string): string {
+  const [year, m] = month.split("-").map(Number)
+  return new Date(year, (m ?? 1) - 1, 1).toLocaleString("en-KE", { month: "long", year: "numeric" })
+}
+
+const LEFT = 40
+const RIGHT = 555
+const SECTION_GREEN: [number, number, number] = [21, 128, 61]
+
+// Matches Chrysal's real payslip layout (sectioned Earnings / Deductions /
+// Net Pay / PAYE Information, with subtotals) — but the figures are this
+// system's own verified numbers (gross − NSSF − pension = taxable pay, per
+// Tony's Nov 2024 source file), not the different pre-tax basis a specific
+// real slip happened to show (SHIF + Housing Levy + pension). Format
+// matched; calculation basis intentionally left as-is per instruction.
 function drawPayslipPage(doc: jsPDF, employee: PayrollEmployeeRecord, month: string) {
-  const y = 40
+  let y = 50
 
   doc.setFont("helvetica", "bold")
-  doc.text("CHRYSAL AFRICA LTD", 40, y)
+  doc.setFontSize(13)
+  doc.text("CHRYSAL AFRICA LTD", LEFT, y)
+  y += 18
+  doc.setTextColor(...SECTION_GREEN)
+  doc.setFontSize(11)
+  doc.text("Payslip", LEFT, y)
+  doc.setTextColor(0, 0, 0)
   doc.setFont("helvetica", "normal")
-  doc.text(`Monthly Payslip — ${month}`, 40, y + 20)
-  doc.text(`Employee: ${employee.name}`, 40, y + 45)
-  doc.text(`Staff No: ${employee.id}`, 40, y + 65)
-  doc.text(`KRA PIN: ${employee.kra_pin}`, 40, y + 85)
-  doc.text(`Cost Centre: ${employee.cost_centre}`, 40, y + 105)
+  doc.setFontSize(9)
+  y += 22
 
-  const rows = [
-    ["Gross Salary", employee.result.gross_salary],
-    ["NSSF Tier I", employee.result.nssf_t1],
-    ["NSSF Tier II", employee.result.nssf_t2],
-    ["SHIF", employee.result.shif],
-    ["AHL", employee.result.ahl],
-    ["Defined Pension EE", employee.result.defined_pension_ee],
-    ["Net PAYE", employee.result.net_paye],
-    ["Total Deductions", employee.result.total_deductions],
-    ["Net Salary", employee.result.net_salary],
+  const infoRows: [string, string][] = [
+    ["Employee No.", employee.id],
+    ["Name", employee.name],
+    ["Pay Period", monthLabel(month)],
+    ["Admin Unit", employee.department],
+    ["Currency", "KES"],
   ]
+  for (const [label, value] of infoRows) {
+    doc.text(label + ":", LEFT, y)
+    doc.text(value, LEFT + 90, y)
+    y += 14
+  }
+  y += 10
 
-  let currentY = y + 135
-  rows.forEach(([label, amount]) => {
-    doc.text(String(label), 40, currentY)
-    doc.text(`KES ${Number(amount).toFixed(2)}`, 380, currentY)
-    currentY += 18
-  })
+  const section = (title: string) => {
+    doc.setFont("helvetica", "bold")
+    doc.setTextColor(...SECTION_GREEN)
+    doc.text(title, LEFT, y)
+    doc.setTextColor(0, 0, 0)
+    doc.setFont("helvetica", "normal")
+    y += 16
+  }
+  const line = (label: string, amount: number, opts: { bold?: boolean; indent?: number } = {}) => {
+    doc.setFont("helvetica", opts.bold ? "bold" : "normal")
+    doc.text(label, LEFT + (opts.indent ?? 0), y)
+    doc.text(amount.toFixed(2), RIGHT, y, { align: "right" })
+    doc.setFont("helvetica", "normal")
+    y += 14
+  }
+  const subtotal = (amount: number) => {
+    doc.setFont("helvetica", "bold")
+    doc.text(amount.toFixed(2), RIGHT, y, { align: "right" })
+    doc.setFont("helvetica", "normal")
+    y += 16
+  }
+  const divider = () => { doc.line(LEFT, y - 8, RIGHT, y - 8) }
+
+  const r = employee.result
+  const i = employee.inputs
+
+  // Earnings
+  section("Earnings:")
+  const earnings: [string, number][] = [["Basic Pay", i.base_salary]]
+  if (i.bonus_commission > 0) earnings.push(["Bonus / Commission", i.bonus_commission])
+  if (i.transport_allowance > 0) earnings.push(["Transport Allowance", i.transport_allowance])
+  if (i.fringe_benefit > 0) earnings.push(["Fringe Benefit (FBT)", i.fringe_benefit])
+  if (i.arrears > 0) earnings.push(["Arrears", i.arrears])
+  if (i.ot_other > 0) earnings.push(["OT / Other", i.ot_other])
+  earnings.forEach(([label, amount]) => line(label, amount))
+  subtotal(r.gross_salary)
+  y += 6
+
+  // Deductions
+  section("Deductions:")
+  const deductions: [string, number][] = [
+    ["PAYE", r.net_paye],
+    ["NSSF (Tier I)", r.nssf_t1],
+    ["NSSF (Tier II)", r.nssf_t2],
+    ["SHIF", r.shif],
+    ["Housing Levy", r.ahl],
+    ["Pension Contribution", r.defined_pension_ee],
+  ]
+  if (i.voluntary_pension > 0) deductions.push(["Voluntary Pension", i.voluntary_pension])
+  if (i.advances > 0) deductions.push(["Advances", i.advances])
+  if (i.helb > 0) deductions.push(["HELB", i.helb])
+  if (i.company_loan > 0) deductions.push(["Company Loan", i.company_loan])
+  if (i.bank_loan > 0) deductions.push(["Bank Loan", i.bank_loan])
+  if (i.sacco > 0) deductions.push(["SACCO", i.sacco])
+  deductions.forEach(([label, amount]) => line(label, amount))
+  const deductionsTotal = deductions.reduce((s, [, amount]) => s + amount, 0)
+  subtotal(deductionsTotal)
+  y += 6
+
+  // Net Pay
+  divider()
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(11)
+  doc.text("Net Pay", LEFT, y)
+  doc.text(r.net_salary.toFixed(2), RIGHT, y, { align: "right" })
+  doc.setFontSize(9)
+  doc.setFont("helvetica", "normal")
+  y += 24
+
+  // PAYE Information
+  section("PAYE Information:")
+  line("Total Earnings", r.gross_salary)
+  doc.text("Less Pre-Tax Deductions:", LEFT, y)
+  y += 14
+  line("NSSF (Tier I)", r.nssf_t1, { indent: 14 })
+  line("NSSF (Tier II)", r.nssf_t2, { indent: 14 })
+  line("Pension Contribution", r.defined_pension_ee, { indent: 14 })
+  line("Taxable Pay", r.taxable_pay, { bold: true })
+  y += 6
+  line("Personal Relief", r.personal_relief)
+  line("PAYE", r.net_paye)
 }
 
 export function generatePayslipPDF(employee: PayrollEmployeeRecord, month: string): Blob {

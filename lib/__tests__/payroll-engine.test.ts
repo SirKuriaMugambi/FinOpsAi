@@ -102,9 +102,7 @@ describe("computePayroll", () => {
     expect(result.gross_paye).toBeCloseTo(66976.28, 2)
   })
 
-  it("matches Tony's source sheet exactly for the two expatriate employees on the alternate PAYE basis", () => {
-    // Reference: Staff 1000 (col E) — Gross PAYE computed on (Gross − flat
-    // 20,000), NSSF excluded from the band base, per Tony's sheet.
+  it("matches Tony's source sheet exactly for Staff 1000 (paye_band_flat_deduction = 20,000)", () => {
     const result = computePayroll({
       base_salary: 398051.75285295275,
       bonus_commission: 0,
@@ -118,10 +116,93 @@ describe("computePayroll", () => {
       company_loan: 0,
       bank_loan: 0,
       sacco: 0,
-      excludeNssfFromPayeBands: true,
+      paye_band_flat_deduction: 20000,
     })
 
     expect(result.gross_paye).toBeCloseTo(108362.08, 2)
+  })
+
+  it("matches Tony's source sheet exactly for Staff 1001 (paye_band_flat_deduction = 45,000)", () => {
+    const result = computePayroll({
+      base_salary: 440577.9394676755,
+      bonus_commission: 0,
+      fringe_benefit: 390,
+      transport_allowance: 0,
+      arrears: 0,
+      ot_other: 0,
+      voluntary_pension: 0,
+      advances: 0,
+      helb: 0,
+      company_loan: 0,
+      bank_loan: 0,
+      sacco: 0,
+      paye_band_flat_deduction: 45000,
+    })
+
+    expect(result.gross_paye).toBeCloseTo(113573.18, 2)
+  })
+
+  it("matches Tony's source sheet exactly for Staff 1007 (paye_band_flat_deduction = 0 AND pension_rate_override = 0)", () => {
+    const result = computePayroll({
+      base_salary: 400000,
+      bonus_commission: 0,
+      fringe_benefit: 1500,
+      transport_allowance: 0,
+      arrears: 0,
+      ot_other: 0,
+      voluntary_pension: 0,
+      advances: 0,
+      helb: 0,
+      company_loan: 0,
+      bank_loan: 0,
+      sacco: 0,
+      paye_band_flat_deduction: 0,
+      pension_rate_override: 0,
+    })
+
+    expect(result.gross_paye).toBeCloseTo(115232.80, 2)
+    expect(result.defined_pension_ee).toBe(0)
+  })
+
+  it("matches Tony's source sheet exactly for Staff 1025 (pension_rate_override = 0, standard PAYE basis)", () => {
+    const result = computePayroll({
+      base_salary: 47802.181875,
+      bonus_commission: 0,
+      fringe_benefit: 1493.181,
+      transport_allowance: 0,
+      arrears: 0,
+      ot_other: 0,
+      voluntary_pension: 0,
+      advances: 0,
+      helb: 0,
+      company_loan: 0,
+      bank_loan: 0,
+      sacco: 0,
+      pension_rate_override: 0,
+    })
+
+    expect(result.gross_paye).toBeCloseTo(8923.41, 2)
+  })
+
+  it("uses a per-employee NSSF Tier II override when set", () => {
+    const result = computePayroll({
+      base_salary: 24000,
+      bonus_commission: 0,
+      fringe_benefit: 600,
+      transport_allowance: 0,
+      arrears: 0,
+      ot_other: 1227.2727272727275,
+      voluntary_pension: 0,
+      advances: 0,
+      helb: 0,
+      company_loan: 0,
+      bank_loan: 0,
+      sacco: 0,
+      pension_rate_override: 0,
+      nssf_t2_override: 1093.6363636363637,
+    })
+
+    expect(result.nssf_t2).toBeCloseTo(1093.64, 2)
   })
 
   it("does not let voluntary pension reduce taxable pay", () => {

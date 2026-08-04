@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server"
 import { createSupabaseAdminClient } from "@/lib/supabase-server"
+import { requireRole } from "@/lib/supabase"
 import type { Employee } from "@/lib/seeds"
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const guard = await requireRole("finance_manager")
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status })
+  }
+
   const { id } = await params
   const supabase = createSupabaseAdminClient()
   if (!supabase) {
@@ -18,6 +24,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const guard = await requireRole("finance_manager")
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status })
+  }
+
   const { id } = await params
   const supabase = createSupabaseAdminClient()
   if (!supabase) {
@@ -43,6 +54,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const guard = await requireRole("finance_manager")
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status })
+  }
+
   const { id } = await params
   const supabase = createSupabaseAdminClient()
   if (!supabase) {

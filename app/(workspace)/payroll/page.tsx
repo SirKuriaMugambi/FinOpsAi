@@ -7,7 +7,7 @@ import { useTheme } from "@/components/theme-provider"
 import {
   Wallet, CheckCircle2, FileSpreadsheet, Eye, Printer,
   Download, Upload, ChevronDown, ChevronUp, Building2,
-  Calculator, TrendingUp, Users, DollarSign, X, RotateCcw, IdCard
+  Calculator, TrendingUp, Users, DollarSign, X, RotateCcw, IdCard, Lock
 } from "lucide-react"
 import {
   computePayroll,
@@ -161,7 +161,7 @@ type Tab = "register" | "statutory" | "gl" | "calculator"
 type RunStatus = "Draft" | "Submitted" | "Approved" | "Rejected" | "Posted" | null
 
 export default function PayrollPage() {
-  const { addAuditLog, currentUserRole } = useFinOps()
+  const { addAuditLog, currentUserRole, authLoading } = useFinOps()
   const { cardRadius, buttonRadius, accentBg, accentText, accentBadge } = useTheme()
 
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -318,7 +318,10 @@ export default function PayrollPage() {
           bank_loan: emp.bank_loan,
           sacco: emp.sacco,
           personal_relief_override: emp.personal_relief_override ?? undefined,
-          excludeNssfFromPayeBands: emp.exclude_nssf_from_paye_bands,
+          paye_band_flat_deduction: emp.paye_band_flat_deduction ?? undefined,
+          pension_rate_override: emp.pension_rate_override ?? undefined,
+          nssf_t2_override: emp.nssf_t2_override ?? undefined,
+          ahl_relief_override: emp.ahl_relief_override ?? undefined,
         }
         const computed = computePayroll(inputs)
         return { ...emp, ...inputs, ...computed }
@@ -469,6 +472,23 @@ export default function PayrollPage() {
     { id: "gl", label: "AX GL Posting", icon: <Building2 className="h-3.5 w-3.5" /> },
     { id: "calculator", label: "PAYE Calculator", icon: <Calculator className="h-3.5 w-3.5" /> },
   ]
+
+  // Payroll contains salary/PII data — restricted to finance_manager. The
+  // real enforcement is server-side (every /api/payroll* route checks this
+  // too, since they use the admin client and bypass RLS); this is just so
+  // the UI doesn't render sensitive data before those requests 403.
+  if (!authLoading && currentUserRole !== "finance_manager") {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center space-y-3">
+        <Lock className="h-8 w-8 text-zinc-300 dark:text-zinc-700" />
+        <h1 className="text-sm font-bold font-mono uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Access Restricted</h1>
+        <p className="text-zinc-400 text-xs max-w-sm">
+          Payroll contains salary and personal data restricted to the Finance Manager role. Contact your
+          administrator if you believe you should have access.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

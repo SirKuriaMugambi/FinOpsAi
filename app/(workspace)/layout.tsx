@@ -42,6 +42,7 @@ interface NavItem {
   name: string;
   href: string;
   icon: any;
+  restrictedToRole?: string;
 }
 
 interface NavSection {
@@ -135,8 +136,8 @@ export default function WorkspaceLayout({
     {
       title: "Operations & Reports",
       items: [
-        { name: "Payroll & PAYE", href: "/payroll", icon: Wallet },
-        { name: "Employee Master", href: "/employees", icon: IdCard },
+        { name: "Payroll & PAYE", href: "/payroll", icon: Wallet, restrictedToRole: "finance_manager" },
+        { name: "Employee Master", href: "/employees", icon: IdCard, restrictedToRole: "finance_manager" },
         { name: "Budget vs Actual", href: "/budget", icon: PieChart },
         {
           name: "Financial Statements",
@@ -162,6 +163,15 @@ export default function WorkspaceLayout({
       ],
     },
   ];
+
+  const visibleNavigation: NavSection[] = navigation
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (item) => !item.restrictedToRole || item.restrictedToRole === currentUserRole
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
 
   const roleLabels: Record<string, string> = {
     senior_accountant: "Senior Accountant",
@@ -196,7 +206,7 @@ export default function WorkspaceLayout({
 
         {/* Sidebar Nav Items */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5 scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800">
-          {navigation.map((section) => (
+          {visibleNavigation.map((section) => (
             <div key={section.title} className="space-y-1">
               <h3 className="px-2 text-[9px] font-semibold tracking-wider text-zinc-400 dark:text-zinc-500 uppercase font-mono">
                 {section.title}
@@ -272,7 +282,7 @@ export default function WorkspaceLayout({
               </button>
             </div>
             <nav className="flex-1 overflow-y-auto p-3 space-y-4">
-              {navigation.map((section) => (
+              {visibleNavigation.map((section) => (
                 <div key={section.title} className="space-y-1">
                   <h3 className="px-2 text-[8px] font-mono font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
                     {section.title}

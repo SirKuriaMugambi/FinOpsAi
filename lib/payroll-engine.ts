@@ -48,13 +48,25 @@
  * contribution exceeds the cap — Tony's sheet folds the excess into the
  * same cell as the voluntary contribution). It does not reduce taxable pay.
  *
- * A small number of employees (e.g. two expatriate/senior roles in the
- * source sheet) have their PAYE band computed on (Gross − a flat KES 20,000)
- * instead of the standard (Gross − actual NSSF − capped pension) — NSSF is
- * not subtracted from their tax-band base at all, while their *reported*
- * Taxable Pay column still uses the standard formula. Confirmed intentional
- * (not a copy-paste artifact) — set `excludeNssfFromPayeBands: true` for
- * those specific employees; do not apply it generally.
+ * A full 46-employee audit against Tony's actual computed figures (not just
+ * spot-checks) surfaced three further per-employee patterns in his sheet,
+ * all confirmed by reading his real formulas cell-by-cell, not inferred:
+ *
+ * - Several employees (7 of 46) have their PAYE bands computed on
+ *   (Gross − a flat amount) instead of the standard (Gross − actual NSSF −
+ *   capped pension). The flat amount varies by employee (20,000 / 45,000 /
+ *   0 — i.e. no deduction at all) — pass the exact figure via
+ *   `paye_band_flat_deduction`. Their *reported* Taxable Pay still uses the
+ *   standard formula; only the band base differs. Leave unset for everyone
+ *   else — do not apply generally.
+ * - 12 of 46 employees have 0% employee pension in Tony's sheet, not the
+ *   standard 5% — pass `pension_rate_override: 0` for those specific
+ *   employees (verified via each one's row-59 formula literally reading
+ *   `*0%`, not a missing/blank cell).
+ * - 5 of the lowest-paid employees have a non-flat NSSF Tier II figure
+ *   (Tony's formula for them is `(gross − 600 − 7000) × 6%`, not the flat
+ *   1,740 everyone else uses) — pass the exact figure via
+ *   `nssf_t2_override`.
  *
  * All rates/bands below live in lib/payroll-rules-config.ts — update the
  * KRA bands, NSSF, SHIF, AHL, pension, or NITA figures there, not here.
@@ -82,10 +94,13 @@ export interface PayrollInputs {
   // a different tax/relief arrangement in Tony's sheet). Leave undefined
   // for standard employees.
   personal_relief_override?: number
-  // Set true only for the specific employees confirmed to use Tony's
-  // alternate PAYE-band basis (Gross − flat KES 20,000, NSSF excluded).
-  // See the file header comment. Leave undefined/false for everyone else.
-  excludeNssfFromPayeBands?: boolean
+  // Per-employee statutory overrides traced from Tony's actual formulas —
+  // see the file header comment for exactly which employees need these and
+  // why. Leave all undefined for standard employees.
+  paye_band_flat_deduction?: number
+  pension_rate_override?: number
+  nssf_t2_override?: number
+  ahl_relief_override?: number
 }
 
 export interface PayrollResult {
@@ -149,7 +164,8 @@ export function computePayroll(inputs: PayrollInputs): PayrollResult {
     base_salary, bonus_commission, fringe_benefit, transport_allowance,
     arrears, ot_other, voluntary_pension,
     advances, helb, company_loan, bank_loan, sacco,
-    personal_relief_override, excludeNssfFromPayeBands,
+    personal_relief_override, paye_band_flat_deduction,
+    pension_rate_override, nssf_t2_override, ahl_relief_override,
   } = inputs
 
   // 1. Gross Salary — sum of all allowances, still on gross (unchanged)
@@ -170,10 +186,11 @@ export function computePayroll(inputs: PayrollInputs): PayrollResult {
   //    NSSF stays FLAT per Tony's 2024 sheet, not recalculated per employee.
   const statutory_base = RULES.statutoryBasis === "gross" ? gross_salary : base_salary
   const nssf_t1_raw = RULES.nssfTier1Flat
-  const nssf_t2_raw = RULES.nssfTier2Flat
+  const nssf_t2_raw = nssf_t2_override ?? RULES.nssfTier2Flat
   const shif_raw = statutory_base * RULES.shifRate
   const ahl_raw = statutory_base * RULES.ahlRate
-  const raw_pension_ee = statutory_base * RULES.pensionEmployeeRate
+  const pension_rate = pension_rate_override ?? RULES.pensionEmployeeRate
+  const raw_pension_ee = statutory_base * pension_rate
   const defined_pension_ee_raw = Math.min(raw_pension_ee, RULES.pensionEmployeeCap)
   const defined_pension_er_raw = statutory_base * RULES.pensionEmployerRate
   // Contributions above the statutory cap still leave the employee's pay —
@@ -189,9 +206,12 @@ export function computePayroll(inputs: PayrollInputs): PayrollResult {
   const taxable_pay_raw = gross_salary - defined_pension_ee_raw - nssf_t1_raw - nssf_t2_raw
 
   // 4. Gross PAYE from slabs. Confirmed-exception employees compute their
-  //    band tax on (Gross − flat 20,000) with NSSF excluded — see file header.
-  const paye_band_base = excludeNssfFromPayeBands
-    ? gross_salary - RULES.pensionEmployeeCap
+  //    band tax on (Gross − a flat amount) instead of the standard taxable
+  //    pay — see file header. paye_band_flat_deduction of 0 is a valid,
+  //    meaningful value (some employees' bands use raw gross, no deduction
+  //    at all), so this checks for undefined specifically, not falsiness.
+  const paye_band_base = paye_band_flat_deduction !== undefined
+    ? gross_salary - paye_band_flat_deduction
     : taxable_pay_raw
   const gross_paye_raw = computeGrossPAYE(paye_band_base)
 
@@ -200,7 +220,7 @@ export function computePayroll(inputs: PayrollInputs): PayrollResult {
   //    standard KES 2,400/month.
   const personal_relief_raw = personal_relief_override ?? RULES.personalReliefStandard
   const nhif_relief_raw = RULES.nhifReliefRate
-  const ahl_relief_raw = Math.min(ahl_raw * RULES.ahlReliefRate, ahl_raw)
+  const ahl_relief_raw = ahl_relief_override ?? Math.min(ahl_raw * RULES.ahlReliefRate, ahl_raw)
 
   // 6. Net PAYE
   const net_paye_raw = Math.max(

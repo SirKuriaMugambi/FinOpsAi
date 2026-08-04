@@ -162,6 +162,16 @@ async function main() {
   // assignment; this only needs a data edit via the Master Data Hub later,
   // not a script change.
   const gradeIndex = header.findIndex((cell) => cell === 'Category');
+  // These four are safe to derive directly from the sheet: a blank cell
+  // genuinely means "zero advance/loan/SACCO this month" for these fields
+  // (no standard-nonzero-default ambiguity, unlike pension rate/personal
+  // relief below, where a blank cell is ambiguous between "not entered"
+  // and "confirmed zero" — those stay as verified hardcoded tables instead).
+  const advancesIndex = header.findIndex((cell) => cell === 'Advances');
+  const helbIndex = header.findIndex((cell) => cell === 'HELB');
+  const companyLoanIndex = header.findIndex((cell) => cell === 'Company loan');
+  const bankLoanIndex = header.findIndex((cell) => cell === 'Bank loan');
+  const saccoIndex = header.findIndex((cell) => cell === 'SACCO');
 
   // ASSUMPTION: no real per-employee cost-centre exists in the source sheet
   // (see comment above). Defaulting everyone to Production (511) — the
@@ -170,18 +180,66 @@ async function main() {
   const DEFAULT_COST_CENTRE = '511';
   const DEFAULT_DEPARTMENT = 'Production';
 
-  // Two employees confirmed (via cell-by-cell formula tracing against the
-  // "AI-Automation-workings" sheet) to use Tony's alternate PAYE-band basis
-  // and a non-standard combined personal/life-insurance/education relief —
-  // see lib/payroll-engine.ts's file header. These are the ONLY employees
-  // verified so far; per instruction, more may exist and Tony will confirm
-  // the real list later — this is an editable data table, not hardcoded
-  // logic, so adding/removing entries here never requires a code change
-  // beyond this seed list.
-  const PAYE_EXCEPTIONS = {
-    '1000': { exclude_nssf_from_paye_bands: true, personal_relief_override: 2400 + 1436.54 + 3454.18 },
-    '1001': { exclude_nssf_from_paye_bands: true, personal_relief_override: 2400 + 480 },
+  // Confirmed via a full 46-employee audit against Tony's actual computed
+  // Gross PAYE/Net PAYE/Net Pay (not spot-checks) that 7 employees use a
+  // different flat PAYE-band deduction than the standard formula — traced
+  // cell-by-cell against "AI-Automation-workings" band-3/4 formulas. This
+  // genuinely can't be derived from this sheet alone (the Gross PAYE column
+  // here is a static copied value, not a formula to reverse-engineer from),
+  // so it stays a precise, verified lookup table rather than a guess.
+  const PAYE_BAND_FLAT_DEDUCTION = {
+    '1000': 20000, '1001': 45000, '1004': 20000, '1005': 0,
+    '1007': 0, '1008': 20000, '1009': 45000, '1010': 20000,
   };
+
+  // The "Voluntary pension Contribution" column in this sheet already has
+  // Tony's excess-over-cap redirect baked in (see lib/payroll-engine.ts's
+  // file header — the engine computes that redirect itself), so it can't be
+  // read directly as the raw voluntary contribution. Only one employee has
+  // a real voluntary contribution in the source data (verified against
+  // "AI-Automation-workings" row 58) — kept as a small explicit exception
+  // rather than mis-deriving it from this sheet's already-adjusted column.
+  const RAW_VOLUNTARY_PENSION = { '1001': 9000 };
+
+  // 12 employees have 0% employee pension in Tony's sheet, not the standard
+  // 5% (verified: each one's row-59 formula in "AI-Automation-workings"
+  // literally reads `*0%`, cross-checked against this sheet's own "Defined
+  // Pension contribution" column being blank for the same 12). Hardcoded
+  // rather than derived from this sheet at import time because a blank cell
+  // here is ambiguous — could mean "confirmed zero" or "not entered yet" —
+  // and this list was verified against the source formulas directly, not
+  // inferred from blankness alone.
+  const PENSION_RATE_OVERRIDE = {
+    '1007': 0, '1025': 0, '1027': 0, '1028': 0, '1029': 0, '1043': 0,
+    '1044': 0, '1045': 0, '1046': 0, '1047': 0, '1048': 0, '1049': 0,
+  };
+
+  // 5 of the lowest-paid employees have a non-flat NSSF Tier II in Tony's
+  // sheet — verified formula `(gross − 600 − 7000) × 6%`, not the flat
+  // 1,740 everyone else uses. Exact values read from his sheet directly.
+  const NSSF_T2_OVERRIDE = {
+    '1045': 1093.6363636363637, '1046': 1216.3636363636363,
+    '1047': 1167.2727272727273, '1048': 1118.181818181818,
+    '1049': 1056.8181818181818,
+  };
+
+  // 9 employees carry a non-standard Personal Relief in Tony's sheet — his
+  // "Personal Relief" column combines the standard KES 2,400 with real
+  // life-insurance and/or education-policy reliefs (or, for staff 1005/1007,
+  // reduces it to zero entirely — a genuine, verified figure, not a data
+  // gap). Read directly from his own computed "Personal Relief" cell
+  // (negated — his sheet stores it as a negative adjustment) rather than
+  // re-deriving from the separate life-insurance/education-policy rows.
+  const PERSONAL_RELIEF_OVERRIDE = {
+    '1000': 7290.72, '1001': 3717.41, '1005': 0, '1007': 0, '1010': 4972.5,
+    '1018': 3915, '1025': 4740, '1031': 3000.15, '1037': 2774.25,
+  };
+
+  // 2 employees have zero AHL relief in Tony's sheet, not the standard 15%
+  // of their AHL contribution — his "AHL Relief" column is blank for both,
+  // alongside their also-zero Personal Relief above (no reliefs applied to
+  // either of these two at all).
+  const AHL_RELIEF_OVERRIDE = { '1005': 0, '1007': 0 };
 
   const employeeRows = [];
   const skippedRows = [];
@@ -254,6 +312,11 @@ async function main() {
     const transportAllowance = toCurrencyNumber(row[transportIndex]);
     const arrears = toCurrencyNumber(row[arrearsIndex]);
     const otOther = toCurrencyNumber(row[othersIndex]);
+    const advances = toCurrencyNumber(row[advancesIndex]);
+    const helb = toCurrencyNumber(row[helbIndex]);
+    const companyLoan = toCurrencyNumber(row[companyLoanIndex]);
+    const bankLoan = toCurrencyNumber(row[bankLoanIndex]);
+    const sacco = toCurrencyNumber(row[saccoIndex]);
 
     // Resolve a final KRA PIN, guaranteeing it's unique within this import
     // run. If the sheet has a genuine duplicate PIN (data entry error) or
@@ -264,8 +327,6 @@ async function main() {
       finalKraPin = `${finalKraPin}-R${i}`;
     }
     usedKraPins.add(finalKraPin);
-
-    const exception = PAYE_EXCEPTIONS[staffNo] || {};
 
     employeeRows.push({
       id: staffNo || `EMP-${i}`,
@@ -286,14 +347,17 @@ async function main() {
       transport_allowance: transportAllowance,
       arrears,
       ot_other: otOther,
-      voluntary_pension: 0,
-      advances: 0,
-      helb: 0,
-      company_loan: 0,
-      bank_loan: 0,
-      sacco: 0,
-      exclude_nssf_from_paye_bands: exception.exclude_nssf_from_paye_bands ?? false,
-      personal_relief_override: exception.personal_relief_override ?? null,
+      voluntary_pension: RAW_VOLUNTARY_PENSION[staffNo] ?? 0,
+      advances,
+      helb,
+      company_loan: companyLoan,
+      bank_loan: bankLoan,
+      sacco,
+      personal_relief_override: PERSONAL_RELIEF_OVERRIDE[staffNo] ?? null,
+      paye_band_flat_deduction: PAYE_BAND_FLAT_DEDUCTION[staffNo] ?? null,
+      pension_rate_override: PENSION_RATE_OVERRIDE[staffNo] ?? null,
+      nssf_t2_override: NSSF_T2_OVERRIDE[staffNo] ?? null,
+      ahl_relief_override: AHL_RELIEF_OVERRIDE[staffNo] ?? null,
     });
   }
 
@@ -307,8 +371,12 @@ async function main() {
         'no per-employee cost-centre mapping exists anywhere in the source workbook (verified). ' +
         'Correct via the Master Data Hub once Tony confirms real assignments.',
       `bank_name/bank_account_number/sha_pin: placeholder ("N/A"/null) for all employees — not present in the source workbook.`,
-      `PAYE exceptions: only staff ${Object.keys(PAYE_EXCEPTIONS).join(', ')} flagged so far (traced from formulas) — ` +
-        'more may exist; Tony to confirm the complete list.',
+      `Statutory overrides: verified against a full 46-employee audit against Tony's actual Gross PAYE/Net PAYE/Net Pay ` +
+        `(not spot-checks) — paye_band_flat_deduction for ${Object.keys(PAYE_BAND_FLAT_DEDUCTION).join(', ')}, ` +
+        `pension_rate_override=0 for ${Object.keys(PENSION_RATE_OVERRIDE).join(', ')}, ` +
+        `nssf_t2_override for ${Object.keys(NSSF_T2_OVERRIDE).join(', ')}, ` +
+        `personal_relief_override for ${Object.keys(PERSONAL_RELIEF_OVERRIDE).join(', ')}. ` +
+        'This is Nov 2024 data — Tony should still confirm nothing has changed since.',
     ],
   };
 

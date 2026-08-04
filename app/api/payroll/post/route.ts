@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createSupabaseAdminClient } from "@/lib/supabase-server"
+import { requireRole } from "@/lib/supabase"
 import { buildPayrollJournal, type PayrollJournalEmployeeInput } from "@/lib/journal-builder"
 import { createPayrollJournal, postPayrollJournal } from "@/lib/dynamics-ax-client"
 import type { PayrollResult } from "@/lib/payroll-engine"
@@ -51,6 +52,11 @@ function toPayrollResult(row: PayrollRegisterRow): PayrollResult {
 }
 
 export async function POST(request: Request) {
+  const guard = await requireRole("finance_manager")
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status })
+  }
+
   const body = (await request.json()) as { month?: string }
   const month = body.month
 

@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server"
 import { createSupabaseAdminClient } from "@/lib/supabase-server"
+import { requireRole } from "@/lib/supabase"
 import type { Employee } from "@/lib/seeds"
 
+// Employee PII/salary data — finance_manager only. These routes use the
+// service-role admin client below (bypasses RLS), so this check is the
+// actual access-control gate, not just a UI nicety.
 export async function GET() {
+  const guard = await requireRole("finance_manager")
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status })
+  }
+
   const supabase = createSupabaseAdminClient()
   if (!supabase) {
     return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 })
@@ -17,6 +26,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const guard = await requireRole("finance_manager")
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status })
+  }
+
   const supabase = createSupabaseAdminClient()
   if (!supabase) {
     return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 })
@@ -51,7 +65,10 @@ export async function POST(request: Request) {
     bank_loan: body.bank_loan ?? 0,
     sacco: body.sacco ?? 0,
     personal_relief_override: body.personal_relief_override ?? null,
-    exclude_nssf_from_paye_bands: body.exclude_nssf_from_paye_bands ?? false,
+    paye_band_flat_deduction: body.paye_band_flat_deduction ?? null,
+    pension_rate_override: body.pension_rate_override ?? null,
+    nssf_t2_override: body.nssf_t2_override ?? null,
+    ahl_relief_override: body.ahl_relief_override ?? null,
   }
 
   const { data, error } = await supabase.from("employees").insert(row).select("*").single()

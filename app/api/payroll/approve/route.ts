@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server"
 import { createSupabaseAdminClient } from "@/lib/supabase-server"
-import { getAuthedUserWithRole } from "@/lib/supabase"
+import { requireRole } from "@/lib/supabase"
 
 // Submitted → Approved. Restricted to finance_manager, matching the RLS
 // policy already enforced elsewhere in this app for payroll/invoice approval.
 export async function POST(request: Request) {
-  const authedUser = await getAuthedUserWithRole()
-  if (!authedUser) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
-  }
-  if (authedUser.role !== "finance_manager") {
-    return NextResponse.json({ error: "Only the finance manager can approve a payroll run" }, { status: 403 })
+  const guard = await requireRole("finance_manager")
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status })
   }
 
   const body = (await request.json()) as { month?: string }
@@ -42,7 +39,7 @@ export async function POST(request: Request) {
 
   const { data: updated, error: updateError } = await supabase
     .from("payroll_runs")
-    .update({ status: "Approved", approved_by: authedUser.id })
+    .update({ status: "Approved", approved_by: guard.user.id })
     .eq("id", run.id)
     .select("*")
     .single()

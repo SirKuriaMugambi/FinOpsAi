@@ -3,13 +3,14 @@
 import React, { useEffect, useMemo, useState } from "react"
 import { useFinOps } from "@/components/finops-provider"
 import { useTheme } from "@/components/theme-provider"
-import { IdCard, Plus, X, Pencil, Trash2, ShieldAlert } from "lucide-react"
+import { IdCard, Plus, X, Pencil, Trash2, ShieldAlert, Lock } from "lucide-react"
 import type { Employee } from "@/lib/seeds"
 
 const NUMERIC_FIELDS = [
   "base_salary", "bonus_commission", "fringe_benefit", "transport_allowance",
   "arrears", "ot_other", "voluntary_pension", "advances", "helb",
   "company_loan", "bank_loan", "sacco", "personal_relief_override",
+  "paye_band_flat_deduction", "pension_rate_override", "nssf_t2_override", "ahl_relief_override",
 ]
 
 function fmt(n: number | undefined) {
@@ -57,7 +58,8 @@ function EmployeeForm({ initial, onSave, onCancel, cardRadius, buttonRadius, acc
     base_salary: 0, bonus_commission: 0, fringe_benefit: 0, transport_allowance: 0,
     arrears: 0, ot_other: 0, voluntary_pension: 0,
     advances: 0, helb: 0, company_loan: 0, bank_loan: 0, sacco: 0,
-    personal_relief_override: null, exclude_nssf_from_paye_bands: false,
+    personal_relief_override: null, paye_band_flat_deduction: null,
+    pension_rate_override: null, nssf_t2_override: null, ahl_relief_override: null,
   }
   const [form, setForm] = useState<Partial<Employee>>(initial ?? blank)
   const [saving, setSaving] = useState(false)
@@ -154,19 +156,14 @@ function EmployeeForm({ initial, onSave, onCancel, cardRadius, buttonRadius, acc
       </div>
 
       <p className="text-[9px] font-mono uppercase text-zinc-400 pt-1 border-t dark:border-zinc-800 flex items-center gap-1">
-        <ShieldAlert className="h-3 w-3" /> Statutory Exceptions
+        <ShieldAlert className="h-3 w-3" /> Statutory Exceptions (confirmed cases only — leave blank otherwise)
       </p>
-      <div className="grid grid-cols-2 gap-3 items-end">
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Personal Relief Override (blank = standard 2,400)" name="personal_relief_override" type="number" value={fieldValue("personal_relief_override")} onChange={handle} />
-        <label className="flex items-center gap-2 text-[10px] font-mono text-zinc-500 pb-1.5">
-          <input
-            type="checkbox" name="exclude_nssf_from_paye_bands"
-            checked={Boolean(form.exclude_nssf_from_paye_bands)}
-            onChange={handle}
-            className="h-3.5 w-3.5"
-          />
-          Exclude NSSF from PAYE bands (confirmed exceptions only)
-        </label>
+        <Field label="Pension Rate Override, decimal (blank = standard 0.05)" name="pension_rate_override" type="number" value={fieldValue("pension_rate_override")} onChange={handle} />
+        <Field label="PAYE Band Flat Deduction (blank = standard basis)" name="paye_band_flat_deduction" type="number" value={fieldValue("paye_band_flat_deduction")} onChange={handle} />
+        <Field label="NSSF Tier II Override (blank = standard flat 1,740)" name="nssf_t2_override" type="number" value={fieldValue("nssf_t2_override")} onChange={handle} />
+        <Field label="AHL Relief Override (blank = standard 15% of AHL)" name="ahl_relief_override" type="number" value={fieldValue("ahl_relief_override")} onChange={handle} />
       </div>
       <p className="text-[9px] text-zinc-400 font-mono">
         Statutory items (NSSF, SHIF, AHL, PAYE) are computed automatically from earnings — see Payroll &amp; PAYE.
@@ -185,7 +182,7 @@ function EmployeeForm({ initial, onSave, onCancel, cardRadius, buttonRadius, acc
 }
 
 export default function EmployeesPage() {
-  const { addAuditLog } = useFinOps()
+  const { addAuditLog, currentUserRole, authLoading } = useFinOps()
   const { cardRadius, buttonRadius, accentBg, accentBadge } = useTheme()
 
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -283,7 +280,25 @@ export default function EmployeesPage() {
     await refreshEmployees()
   }
 
-  const exceptionCount = employees.filter((e) => e.exclude_nssf_from_paye_bands || e.personal_relief_override).length
+  const hasException = (e: Employee) =>
+    Boolean(e.personal_relief_override || e.paye_band_flat_deduction != null || e.pension_rate_override != null || e.nssf_t2_override || e.ahl_relief_override != null)
+  const exceptionCount = employees.filter(hasException).length
+
+  // Employee master holds PII/bank details — finance_manager only. Real
+  // enforcement is server-side (every /api/employees* route checks this
+  // too); this just keeps the UI from rendering the data before that 403s.
+  if (!authLoading && currentUserRole !== "finance_manager") {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center space-y-3">
+        <Lock className="h-8 w-8 text-zinc-300 dark:text-zinc-700" />
+        <h1 className="text-sm font-bold font-mono uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Access Restricted</h1>
+        <p className="text-zinc-400 text-xs max-w-sm">
+          Employee Master holds personal and bank data restricted to the Finance Manager role. Contact your
+          administrator if you believe you should have access.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -388,7 +403,7 @@ export default function EmployeesPage() {
                     </td>
                     <td className="px-4 py-3 text-right font-mono">{fmt(emp.base_salary)}</td>
                     <td className="px-4 py-3 text-center">
-                      {(emp.exclude_nssf_from_paye_bands || emp.personal_relief_override) ? (
+                      {hasException(emp) ? (
                         <span className="inline-flex items-center gap-1 text-[9px] font-mono text-amber-600 dark:text-amber-400">
                           <ShieldAlert className="h-3 w-3" /> Yes
                         </span>

@@ -30,13 +30,24 @@ export default function DashboardPage() {
   const payrollMonth = useMemo(() => new Date().toISOString().slice(0, 7), [])
   const [payrollHeadcount, setPayrollHeadcount] = useState(0)
   const [payrollRunStatus, setPayrollRunStatus] = useState<string | null>(null)
+  // /api/payroll is finance_manager-only (payroll is salary/PII data) — a
+  // 403 here means "not your role", not "no run yet". Tracked separately so
+  // the cards below don't show a misleading empty state for other roles.
+  const [payrollRestricted, setPayrollRestricted] = useState(false)
 
   useEffect(() => {
     let ignore = false
     fetch(`/api/payroll?month=${payrollMonth}`)
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (r.status === 403) return { restricted: true }
+        return r.ok ? r.json() : null
+      })
       .then((payload) => {
         if (ignore || !payload) return
+        if (payload.restricted) {
+          setPayrollRestricted(true)
+          return
+        }
         setPayrollHeadcount(Array.isArray(payload.employees) ? payload.employees.length : 0)
         setPayrollRunStatus(payload.run?.status ?? null)
       })
@@ -261,20 +272,30 @@ export default function DashboardPage() {
       {/* Payroll KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Payroll Progress */}
-        <Link href="/payroll" className={`p-4 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 flex flex-col justify-between h-28 hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20 transition-colors ${cardRadius}`}>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono uppercase text-zinc-400 dark:text-zinc-500 tracking-wider">Payroll Progress</span>
-            <Wallet className={`h-4 w-4 ${accentText}`} />
+        {payrollRestricted ? (
+          <div className={`p-4 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 flex flex-col justify-between h-28 ${cardRadius}`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono uppercase text-zinc-400 dark:text-zinc-500 tracking-wider">Payroll Progress</span>
+              <Wallet className="h-4 w-4 text-zinc-300 dark:text-zinc-700" />
+            </div>
+            <p className="text-zinc-400 text-[10px] font-mono uppercase">Finance Manager only</p>
           </div>
-          <div>
-            <span className="text-lg font-bold tracking-tight font-mono text-zinc-900 dark:text-zinc-100">
-              {payrollHeadcount} <span className="text-xs font-normal text-zinc-400">staff</span>
-            </span>
-            <p className="text-zinc-400 text-[10px] mt-1 font-mono uppercase">
-              Status: {payrollRunStatus ?? "No run yet"} — {payrollMonth}
-            </p>
-          </div>
-        </Link>
+        ) : (
+          <Link href="/payroll" className={`p-4 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 flex flex-col justify-between h-28 hover:bg-zinc-50/50 dark:hover:bg-zinc-900/20 transition-colors ${cardRadius}`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono uppercase text-zinc-400 dark:text-zinc-500 tracking-wider">Payroll Progress</span>
+              <Wallet className={`h-4 w-4 ${accentText}`} />
+            </div>
+            <div>
+              <span className="text-lg font-bold tracking-tight font-mono text-zinc-900 dark:text-zinc-100">
+                {payrollHeadcount} <span className="text-xs font-normal text-zinc-400">staff</span>
+              </span>
+              <p className="text-zinc-400 text-[10px] mt-1 font-mono uppercase">
+                Status: {payrollRunStatus ?? "No run yet"} — {payrollMonth}
+              </p>
+            </div>
+          </Link>
+        )}
 
         {/* Pending Approvals */}
         <div className={`p-4 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 flex flex-col justify-between h-28 ${cardRadius}`}>
@@ -282,14 +303,18 @@ export default function DashboardPage() {
             <span className="text-[10px] font-mono uppercase text-zinc-400 dark:text-zinc-500 tracking-wider">Pending Approvals</span>
             <Hourglass className={`h-4 w-4 ${payrollRunStatus === "Submitted" ? "text-amber-500" : accentText}`} />
           </div>
-          <div>
-            <span className="text-lg font-bold tracking-tight font-mono text-zinc-900 dark:text-zinc-100">
-              {payrollRunStatus === "Submitted" ? 1 : 0} <span className="text-xs font-normal text-zinc-400">runs</span>
-            </span>
-            <p className="text-zinc-400 text-[10px] mt-1 font-mono">
-              {payrollRunStatus === "Submitted" ? `${payrollMonth} awaiting finance manager sign-off` : "Nothing awaiting sign-off"}
-            </p>
-          </div>
+          {payrollRestricted ? (
+            <p className="text-zinc-400 text-[10px] font-mono uppercase">Finance Manager only</p>
+          ) : (
+            <div>
+              <span className="text-lg font-bold tracking-tight font-mono text-zinc-900 dark:text-zinc-100">
+                {payrollRunStatus === "Submitted" ? 1 : 0} <span className="text-xs font-normal text-zinc-400">runs</span>
+              </span>
+              <p className="text-zinc-400 text-[10px] mt-1 font-mono">
+                {payrollRunStatus === "Submitted" ? `${payrollMonth} awaiting finance manager sign-off` : "Nothing awaiting sign-off"}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Payroll Statutory Remittance Countdown */}
